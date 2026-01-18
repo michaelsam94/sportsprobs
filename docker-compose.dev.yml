@@ -1,0 +1,82 @@
+version: '3.8'
+
+services:
+  # FastAPI Backend (Development)
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: sports-api-dev
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://sports_user:sports_password@postgres:5432/sports_analytics
+      - REDIS_URL=redis://redis:6379/0
+      - ENVIRONMENT=development
+      - DEBUG=True
+      - RATE_LIMIT_ENABLED=True
+      - CACHE_ENABLED=True
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+      - ./config:/app/config
+      - ./logs:/app/logs
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - sports-network-dev
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: sports-postgres-dev
+    environment:
+      - POSTGRES_USER=sports_user
+      - POSTGRES_PASSWORD=sports_password
+      - POSTGRES_DB=sports_analytics
+    volumes:
+      - postgres_data_dev:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sports_user -d sports_analytics"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - sports-network-dev
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: sports-redis-dev
+    volumes:
+      - redis_data_dev:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - sports-network-dev
+
+volumes:
+  postgres_data_dev:
+    driver: local
+  redis_data_dev:
+    driver: local
+
+networks:
+  sports-network-dev:
+    driver: bridge
+
