@@ -3,7 +3,7 @@
 import json
 import hashlib
 from typing import Optional, Any, Dict
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 import logging
 
 try:
@@ -93,6 +93,19 @@ class CacheService:
 
         return None
 
+    def _serialize_for_cache(self, obj: Any) -> Any:
+        """Recursively serialize data for JSON caching, handling datetime objects."""
+        if isinstance(obj, datetime):
+            return obj.isoformat()
+        elif isinstance(obj, date):
+            return obj.isoformat()
+        elif isinstance(obj, dict):
+            return {k: self._serialize_for_cache(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [self._serialize_for_cache(item) for item in obj]
+        else:
+            return obj
+
     async def set(
         self,
         endpoint: str,
@@ -109,7 +122,9 @@ class CacheService:
             ttl_seconds: Time to live in seconds (default: 5 minutes)
         """
         cache_key = self._generate_key(endpoint, params)
-        cache_data = json.dumps(data)
+        # Serialize data to handle datetime objects
+        serialized_data = self._serialize_for_cache(data)
+        cache_data = json.dumps(serialized_data)
 
         if self.use_redis:
             redis_client = await self._get_redis_client()
