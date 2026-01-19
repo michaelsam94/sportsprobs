@@ -57,6 +57,10 @@ class Settings(BaseSettings):
     # External Services
     SPORTS_DATA_API_KEY: str = Field(default="")
     SPORTS_DATA_API_URL: str = Field(default="https://api.sportsdata.io/v3")
+    
+    # Free Sports APIs
+    API_FOOTBALL_KEY: Optional[str] = Field(default="90c54fdc2884567488d21356849c8579", description="API-Football API key (optional)")
+    THESPORTSDB_KEY: Optional[str] = Field(default="123", description="TheSportsDB API key (optional, free tier doesn't require)")
 
     # Proxy/Cache Settings
     CACHE_ENABLED: bool = Field(default=True)
