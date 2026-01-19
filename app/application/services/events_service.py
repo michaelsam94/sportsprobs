@@ -74,7 +74,7 @@ class EventsService:
         # Cache the result
         if use_cache and events:
             cache_data = [event.model_dump() for event in events]
-            await cache_service.set("live_events", cache_data, cache_key_params, ttl=cache_ttl)
+            await cache_service.set("live_events", cache_data, cache_key_params, ttl_seconds=cache_ttl)
 
         return events
 
@@ -144,7 +144,7 @@ class EventsService:
         # Cache the result
         if use_cache and events:
             cache_data = [event.model_dump() for event in events]
-            await cache_service.set("upcoming_events", cache_data, cache_key_params, ttl=cache_ttl)
+            await cache_service.set("upcoming_events", cache_data, cache_key_params, ttl_seconds=cache_ttl)
 
         return events
 
