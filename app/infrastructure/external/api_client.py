@@ -179,10 +179,23 @@ class APIClient:
                 # Handle other errors
                 if response.status_code >= 400:
                     error_data = None
+                    error_message = None
                     try:
                         error_data = response.json()
+                        error_message = error_data.get('message', 'Unknown error')
                     except Exception:
-                        error_data = {"message": response.text}
+                        # If response is HTML or plain text, extract a concise message
+                        response_text = response.text
+                        if response_text:
+                            # For HTML responses, try to extract title or use status code
+                            if response_text.strip().startswith('<!DOCTYPE') or response_text.strip().startswith('<html'):
+                                error_message = f"HTTP {response.status_code} - {response.reason_phrase}"
+                            else:
+                                # Truncate long text responses
+                                error_message = response_text[:500] if len(response_text) > 500 else response_text
+                        else:
+                            error_message = f"HTTP {response.status_code} - {response.reason_phrase}"
+                        error_data = {"message": error_message}
 
                     if attempt < self.max_retries and response.status_code >= 500:
                         # Retry on server errors
@@ -195,7 +208,7 @@ class APIClient:
                         continue
                     else:
                         raise APIError(
-                            f"API request failed: {error_data.get('message', 'Unknown error')}",
+                            f"API request failed: {error_message}",
                             status_code=response.status_code,
                             response=error_data,
                         )

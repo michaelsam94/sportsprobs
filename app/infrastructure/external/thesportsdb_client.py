@@ -56,7 +56,12 @@ class TheSportsDBClient(APIClient):
             response = await self.get(f"/{api_key}/eventsday.php", params=params)
             return response
         except APIError as e:
-            logger.error(f"TheSportsDB error: {e}")
+            # Log as warning since TheSportsDB is a fallback service
+            error_msg = str(e)
+            # Truncate long HTML error messages
+            if len(error_msg) > 200:
+                error_msg = error_msg[:200] + "..."
+            logger.warning(f"TheSportsDB error (fallback service): {error_msg}")
             raise
 
     async def get_live_events(
@@ -80,6 +85,11 @@ class TheSportsDBClient(APIClient):
             response = await self.get(f"/{api_key}/livescore.php", params=params)
             return response
         except APIError as e:
-            logger.error(f"TheSportsDB error: {e}")
+            # Log as warning since TheSportsDB is a fallback service
+            error_msg = str(e)
+            # Truncate long HTML error messages
+            if len(error_msg) > 200:
+                error_msg = error_msg[:200] + "..."
+            logger.warning(f"TheSportsDB error (fallback service): {error_msg}")
             raise
 

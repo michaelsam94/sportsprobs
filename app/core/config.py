@@ -77,6 +77,11 @@ class Settings(BaseSettings):
 
     # Admin Settings
     ADMIN_TOKEN: Optional[str] = Field(default=None, description="Admin token for protected endpoints")
+    
+    # Logging Settings
+    LOG_REQUEST_RESPONSE: bool = Field(default=True, description="Enable detailed request/response logging")
+    LOG_REQUEST_BODY_MAX_SIZE: int = Field(default=10000, description="Maximum request body size to log (bytes)")
+    LOG_RESPONSE_BODY_MAX_SIZE: int = Field(default=10000, description="Maximum response body size to log (bytes)")
 
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod
