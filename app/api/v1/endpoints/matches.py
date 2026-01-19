@@ -99,41 +99,94 @@ async def get_live_matches(
 @limiter.limit(f"{settings.RATE_LIMIT_PER_MINUTE}/minute")
 async def get_upcoming_matches(
     request: Request,
-    limit: int = Query(10, ge=1, le=100),
+    limit: int = Query(100, ge=1, le=500),
     league_id: Optional[int] = Query(None, description="Filter by league ID"),
     date: Optional[str] = Query(None, description="Date filter (YYYY-MM-DD)"),
+    filter_type: Optional[str] = Query(None, description="Filter type: 'today', 'this_week', 'this_month'"),
     db: AsyncSession = Depends(get_db),
 ):
-    """Get upcoming matches from external APIs (API-Football, TheSportsDB).
+    """Get upcoming matches that haven't started yet.
     
-    This endpoint fetches upcoming matches from free sports APIs:
-    - API-Football (primary)
-    - TheSportsDB (fallback)
+    This endpoint fetches upcoming matches from external APIs (API-Football, TheSportsDB)
+    or from the database. Matches are filtered to only include those with status 'scheduled'
+    or 'NS' (Not Started) and match_date in the future.
+    
+    Filter types:
+    - 'today': Matches scheduled for today
+    - 'this_week': Matches scheduled for this week (today to 7 days from now)
+    - 'this_month': Matches scheduled for this month (today to end of month)
+    - None: All upcoming matches (default)
     
     Features:
     - Caching (1 hour default TTL)
     - Automatic fallback to alternative APIs
     - Normalized response format
-    - Pagination support
+    - Date range filtering
     """
+    from datetime import datetime, timedelta
+    from calendar import monthrange
+    
+    # Calculate date range based on filter_type
+    now = datetime.utcnow()
+    start_date = now
+    end_date = None
+    
+    if filter_type == "today":
+        # Today only
+        start_date = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        end_date = start_date + timedelta(days=1)
+    elif filter_type == "this_week":
+        # This week (today to 7 days from now)
+        start_date = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        end_date = start_date + timedelta(days=7)
+    elif filter_type == "this_month":
+        # This month (today to end of month)
+        start_date = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        last_day = monthrange(now.year, now.month)[1]
+        end_date = datetime(now.year, now.month, last_day, 23, 59, 59)
+    
     from app.application.services.events_service import EventsService
     
     try:
         events_service = EventsService()
-        matches = await events_service.get_upcoming_events(
+        # Get all upcoming events
+        all_matches = await events_service.get_upcoming_events(
             league_id=league_id,
             date=date,
-            limit=limit,
+            limit=limit * 2,  # Get more to filter
             use_cache=True,
             cache_ttl=3600,
         )
-        return matches
+        
+        # Filter by date range and status
+        filtered_matches = []
+        for match in all_matches:
+            # Check if match is in the future and not started
+            match_date = match.match_date
+            if match_date and match_date >= start_date:
+                if end_date is None or match_date <= end_date:
+                    # Only include scheduled/not started matches
+                    if match.status in ["scheduled", "NS", None] or (match.status and "scheduled" in match.status.lower()):
+                        filtered_matches.append(match)
+        
+        # Sort by date and limit
+        filtered_matches.sort(key=lambda x: x.match_date or datetime.max)
+        return filtered_matches[:limit]
+        
     except Exception as e:
         logger.error(f"Error fetching upcoming matches: {e}", exc_info=True)
         # Fallback to database if external APIs fail
         repository = get_match_repository(db)
         service = MatchService(repository)
-        return await service.get_upcoming_matches(limit=limit)
+        
+        # Use repository method with date range if available
+        if end_date:
+            matches = await repository.get_by_date_range(start_date, end_date)
+            # Filter to only scheduled/upcoming
+            filtered = [m for m in matches if m.status in ["scheduled", "NS", None] and m.match_date >= now]
+            return [await service._entity_to_dto(m) for m in filtered[:limit]]
+        else:
+            return await service.get_upcoming_matches(limit=limit)
 
 
 @router.get("/finished", response_model=List[MatchResponseDTO])
