@@ -93,11 +93,12 @@ class TheSportsDBClient(APIClient):
         try:
             api_key = self.api_key or "123"  # Free tier API key is "123"
             response = await self.get(f"/{api_key}/eventsday.php", params=params)
-            # Filter for live events if possible (events with status "Live")
+            # Filter for live events - status can be "Live", "1H", "2H", "HT" (first half, second half, half time)
             if response.get("events"):
+                live_statuses = ["Live", "1H", "2H", "HT"]  # These indicate a match is currently live
                 live_events = [
                     event for event in response["events"]
-                    if event.get("strStatus") == "Live"
+                    if event.get("strStatus") in live_statuses
                 ]
                 if live_events:
                     response["events"] = live_events

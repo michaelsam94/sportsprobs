@@ -239,31 +239,63 @@ class EventsService:
                 except:
                     start_time = datetime.utcnow()
 
-                # Extract status
+                # Extract and normalize status
                 status = event_data.get("strStatus", "NS")
+                # Map TheSportsDB status values to standard status codes
                 if status == "Live":
+                    status = "LIVE"
+                elif status in ["1H", "2H", "HT"]:  # First half, second half, half time
                     status = "LIVE"
                 elif status in ["Full Time", "Match Finished"]:
                     status = "FT"
+                elif status in ["NS", "Not Started"]:
+                    status = "NS"
+                # Keep other statuses as-is (e.g., "Cancelled", "Postponed")
 
-                # Build score
-                home_score = event_data.get("intHomeScore")
-                away_score = event_data.get("intAwayScore")
+                # Build score - convert strings to integers
+                home_score = None
+                away_score = None
+                try:
+                    home_score_str = event_data.get("intHomeScore")
+                    if home_score_str is not None and home_score_str != "":
+                        home_score = int(home_score_str)
+                except (ValueError, TypeError):
+                    pass
+                
+                try:
+                    away_score_str = event_data.get("intAwayScore")
+                    if away_score_str is not None and away_score_str != "":
+                        away_score = int(away_score_str)
+                except (ValueError, TypeError):
+                    pass
 
                 # Extract team names
                 home_team_name = event_data.get("strHomeTeam")
                 away_team_name = event_data.get("strAwayTeam")
 
-                # Ensure team IDs are valid (> 0)
-                home_team_id = event_data.get("idHomeTeam") or 1
-                away_team_id = event_data.get("idAwayTeam") or 1
-                if home_team_id <= 0:
+                # Ensure team IDs are valid (> 0) - convert strings to int
+                try:
+                    home_team_id = int(event_data.get("idHomeTeam") or 0)
+                    if home_team_id <= 0:
+                        home_team_id = 1
+                except (ValueError, TypeError):
                     home_team_id = 1
-                if away_team_id <= 0:
+                
+                try:
+                    away_team_id = int(event_data.get("idAwayTeam") or 0)
+                    if away_team_id <= 0:
+                        away_team_id = 1
+                except (ValueError, TypeError):
                     away_team_id = 1
                 
+                # Parse event ID
+                try:
+                    event_id = int(event_data.get("idEvent") or 0)
+                except (ValueError, TypeError):
+                    event_id = 0
+                
                 event = MatchResponseDTO(
-                    id=event_data.get("idEvent", 0),
+                    id=event_id,
                     home_team_id=home_team_id,
                     away_team_id=away_team_id,
                     home_team_name=home_team_name,
@@ -281,7 +313,7 @@ class EventsService:
                 )
                 events.append(event)
             except Exception as e:
-                logger.error(f"Error normalizing TheSportsDB event: {e}")
+                logger.error(f"Error normalizing TheSportsDB event: {e}", exc_info=True)
                 continue
 
         return events
