@@ -98,24 +98,48 @@ class SecurityMiddleware(BaseHTTPMiddleware):
             # Validate API key using database
             logger.debug(f"Validating API key (first 10 chars: {api_key[:10]}...) from IP: {client_ip}")
             # Get database session for API key validation
-            async with AsyncSessionLocal() as db:
-                try:
-                    api_key_service = get_api_key_service(db)
-                    key_info = await api_key_service.validate_key(api_key)
-                except Exception as e:
-                    logger.error(f"Error validating API key: {e}", exc_info=True)
-                    # If it's a database error (table doesn't exist), return a more helpful error
-                    error_str = str(e).lower()
-                    if "does not exist" in error_str or "relation" in error_str or "table" in error_str:
-                        logger.error("Database table 'api_keys' may not exist. Please run migrations: alembic upgrade head")
-                        return JSONResponse(
-                            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                            content={
-                                "error": "Database configuration error",
-                                "message": "API keys table not found. Please run database migrations.",
-                            },
-                        )
-                    key_info = None
+            key_info = None
+            try:
+                async with AsyncSessionLocal() as db:
+                    try:
+                        api_key_service = get_api_key_service(db)
+                        key_info = await api_key_service.validate_key(api_key)
+                    except Exception as e:
+                        logger.error(f"Error validating API key: {e}", exc_info=True)
+                        # If it's a database error (table doesn't exist), return a more helpful error
+                        error_str = str(e).lower()
+                        if "does not exist" in error_str or "relation" in error_str or "table" in error_str or "no such table" in error_str:
+                            logger.error("Database table 'api_keys' may not exist. Please run migrations: alembic upgrade head")
+                            return JSONResponse(
+                                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                                content={
+                                    "error": "Database configuration error",
+                                    "message": "API keys table not found. Please run database migrations: alembic upgrade head",
+                                    "details": str(e),
+                                },
+                            )
+                        # For other database errors, log and return generic error
+                        if "database" in error_str or "connection" in error_str or "timeout" in error_str:
+                            logger.error(f"Database connection error during API key validation: {e}")
+                            return JSONResponse(
+                                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                                content={
+                                    "error": "Database unavailable",
+                                    "message": "Unable to validate API key due to database connection issue.",
+                                },
+                            )
+                        # For other errors, just set key_info to None (will be treated as invalid key)
+                        key_info = None
+            except Exception as outer_e:
+                logger.error(f"Outer exception during API key validation: {outer_e}", exc_info=True)
+                return JSONResponse(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    content={
+                        "error": "Internal server error",
+                        "message": "An error occurred while validating the API key.",
+                        "details": str(outer_e) if settings.DEBUG else None,
+                    },
+                )
             
             if not key_info:
                 logger.warning(f"Invalid API key (first 10 chars: {api_key[:10]}...) from IP: {client_ip}")
