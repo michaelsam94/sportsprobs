@@ -18,7 +18,37 @@ class GeminiClient:
     def __init__(self):
         """Initialize Gemini client."""
         genai.configure(api_key=settings.GEMINI_API_KEY)
-        self.model = genai.GenerativeModel('gemini-pro')
+        # Use configured model or try available models in order of preference
+        # gemini-pro is deprecated, use gemini-1.5-flash, gemini-1.5-pro, or gemini-3-flash-preview
+        configured_model = getattr(settings, 'GEMINI_MODEL', None)
+        model_names = []
+        
+        if configured_model:
+            model_names = [configured_model]
+        
+        # Add fallback models if configured model fails
+        # Prioritize gemini-3-flash-preview, then gemini-1.5-flash, then gemini-1.5-pro
+        fallback_models = ['gemini-3-flash-preview', 'gemini-1.5-flash', 'gemini-1.5-pro']
+        for fallback in fallback_models:
+            if fallback not in model_names:
+                model_names.append(fallback)
+        
+        self.model = None
+        self.model_name = None
+        
+        for model_name in model_names:
+            try:
+                self.model = genai.GenerativeModel(model_name)
+                self.model_name = model_name
+                logger.info(f"Successfully initialized Gemini model: {model_name}")
+                break
+            except Exception as e:
+                logger.warning(f"Failed to initialize {model_name}: {e}")
+                continue
+        
+        if self.model is None:
+            raise ValueError("Failed to initialize any Gemini model. Please check your API key and available models.")
+        
         self.timeout = 60
 
     def _get_comprehensive_analysis_prompt(

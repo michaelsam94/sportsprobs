@@ -64,6 +64,7 @@ class Settings(BaseSettings):
     
     # Gemini AI
     GEMINI_API_KEY: str = Field(default="AIzaSyCbsDi2KMSJZ2EzhpACqMg-jNAWxalbfS4", description="Google Gemini API key for sports analysis")
+    GEMINI_MODEL: str = Field(default="gemini-3-flash-preview", description="Gemini model name (gemini-3-flash-preview, gemini-1.5-flash, gemini-1.5-pro)")
 
     # Proxy/Cache Settings
     CACHE_ENABLED: bool = Field(default=True)
