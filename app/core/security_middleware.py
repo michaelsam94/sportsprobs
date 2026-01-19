@@ -33,12 +33,26 @@ class SecurityMiddleware(BaseHTTPMiddleware):
             "/openapi.json",
             "/redoc",
         }
+        # Paths that should be excluded (exact match or starts with)
+        self.excluded_path_prefixes = [
+            "/docs",
+            "/redoc",
+            "/openapi.json",
+            "/api/docs",
+            "/api/redoc",
+            "/api/openapi.json",
+        ]
 
     async def dispatch(self, request: Request, call_next: Callable):
         """Process request through security middleware."""
         # Skip security for excluded paths
         if request.url.path in self.excluded_paths:
             return await call_next(request)
+        
+        # Check if path starts with any excluded prefix
+        for prefix in self.excluded_path_prefixes:
+            if request.url.path.startswith(prefix):
+                return await call_next(request)
 
         # Get client IP
         client_ip = self._get_client_ip(request)
