@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update, delete
 
 from app.infrastructure.database.models.api_key_model import APIKeyModel
-from app.infrastructure.security.api_key_service import APIKey
+from app.domain.entities.api_key import APIKey
 
 
 class APIKeyRepository:

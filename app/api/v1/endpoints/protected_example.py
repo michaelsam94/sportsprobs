@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 
 from app.core.dependencies import get_api_key, get_client_id
-from app.infrastructure.security.api_key_service import APIKey
+from app.domain.entities.api_key import APIKey
 
 router = APIRouter()
 

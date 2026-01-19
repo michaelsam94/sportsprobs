@@ -1,9 +1,9 @@
 """Security infrastructure."""
 
+from app.domain.entities.api_key import APIKey
 from app.infrastructure.security.api_key_service import (
     APIKeyService,
-    APIKey,
-    api_key_service,
+    get_api_key_service,
 )
 from app.infrastructure.security.ip_throttle import (
     IPThrottleService,
@@ -11,9 +11,9 @@ from app.infrastructure.security.ip_throttle import (
 )
 
 __all__ = [
-    "APIKeyService",
     "APIKey",
-    "api_key_service",
+    "APIKeyService",
+    "get_api_key_service",
     "IPThrottleService",
     "ip_throttle_service",
 ]

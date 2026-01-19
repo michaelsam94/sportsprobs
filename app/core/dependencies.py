@@ -13,7 +13,8 @@ from app.application.services.team_service import TeamService
 from app.application.services.match_service import MatchService
 from app.infrastructure.external.sports_data_client import SportsDataClient
 from app.application.services.proxy_service import ProxyService
-from app.infrastructure.security.api_key_service import APIKey, get_api_key_service, APIKeyService
+from app.domain.entities.api_key import APIKey
+from app.infrastructure.security.api_key_service import get_api_key_service, APIKeyService
 
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:

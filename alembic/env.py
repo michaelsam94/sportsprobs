@@ -18,6 +18,7 @@ from app.infrastructure.database.models import (
     MatchStatModel,
     HistoricalResultModel,
     PlayerModel,
+    APIKeyModel,
 )
 from app.core.config import settings
 

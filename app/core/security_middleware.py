@@ -103,7 +103,18 @@ class SecurityMiddleware(BaseHTTPMiddleware):
                     api_key_service = get_api_key_service(db)
                     key_info = await api_key_service.validate_key(api_key)
                 except Exception as e:
-                    logger.error(f"Error validating API key: {e}")
+                    logger.error(f"Error validating API key: {e}", exc_info=True)
+                    # If it's a database error (table doesn't exist), return a more helpful error
+                    error_str = str(e).lower()
+                    if "does not exist" in error_str or "relation" in error_str or "table" in error_str:
+                        logger.error("Database table 'api_keys' may not exist. Please run migrations: alembic upgrade head")
+                        return JSONResponse(
+                            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                            content={
+                                "error": "Database configuration error",
+                                "message": "API keys table not found. Please run database migrations.",
+                            },
+                        )
                     key_info = None
             
             if not key_info:

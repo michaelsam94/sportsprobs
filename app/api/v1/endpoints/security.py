@@ -10,7 +10,8 @@ from app.core.config import settings
 from app.core.rate_limit import limiter
 from app.core.auth import verify_admin_token
 from app.core.dependencies import get_db, get_api_key_service
-from app.infrastructure.security.api_key_service import APIKey, APIKeyService
+from app.domain.entities.api_key import APIKey
+from app.infrastructure.security.api_key_service import APIKeyService
 from app.infrastructure.security.ip_throttle import ip_throttle_service
 
 router = APIRouter()

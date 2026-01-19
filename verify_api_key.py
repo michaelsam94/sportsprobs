@@ -8,7 +8,8 @@ from pathlib import Path
 # Add app to path
 sys.path.insert(0, str(Path(__file__).parent))
 
-from app.infrastructure.security.api_key_service import api_key_service, APIKeyService
+from app.domain.entities.api_key import APIKey
+from app.infrastructure.security.api_key_service import APIKeyService
 
 # The API key to verify
 API_KEY = "sk_IlKzMWU-0G58anib7k4goRFU9lzKmsUoiGuS7x1o8Wo"
