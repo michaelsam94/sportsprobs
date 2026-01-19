@@ -270,9 +270,14 @@ async def get_upcoming_matches(
             service = MatchService(repository)
             try:
                 if end_date:
-                    matches = await repository.get_by_date_range(start_date, end_date)
+                    # Convert timezone-aware datetimes to naive for database query
+                    # Database stores TIMESTAMP WITHOUT TIME ZONE, so we need naive datetimes
+                    start_date_naive = start_date.replace(tzinfo=None) if start_date.tzinfo else start_date
+                    end_date_naive = end_date.replace(tzinfo=None) if end_date.tzinfo else end_date
+                    matches = await repository.get_by_date_range(start_date_naive, end_date_naive)
                     # Filter to only scheduled/upcoming
-                    filtered = [m for m in matches if m.status in ["scheduled", "NS", None] and m.match_date and m.match_date >= now]
+                    now_naive = now.replace(tzinfo=None) if now.tzinfo else now
+                    filtered = [m for m in matches if m.status in ["scheduled", "NS", None] and m.match_date and m.match_date >= now_naive]
                     logger.info(f"Database fallback: Found {len(filtered)} matches in database for date range")
                     if filtered:
                         return [await service._entity_to_dto(m) for m in filtered[:limit]]
