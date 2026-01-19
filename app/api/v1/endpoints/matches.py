@@ -463,6 +463,8 @@ async def get_match_analytics(
                     "goals_for_avg": goals_for,
                     "goals_against_avg": goals_against,
                     "matches_count": 0,  # Mark as league-based, not team-specific
+                    "db_team_id": None,
+                    "source": "league_based",
                 }
             
             # No league data either, use defaults with team-based variation for uniqueness
@@ -481,6 +483,8 @@ async def get_match_analytics(
                 "goals_for_avg": max(0.8, min(2.2, base_goals_for + (variation * 0.6))),
                 "goals_against_avg": max(0.7, min(2.0, base_goals_against - (variation * 0.5))),
                 "matches_count": 0,
+                "db_team_id": None,
+                "source": "default_with_variation",
             }
         
         # Get finished matches for this team (last 20 matches or last 3 months)
@@ -510,7 +514,9 @@ async def get_match_analytics(
             return {
                 "goals_for_avg": 1.5 if is_home else 1.2,
                 "goals_against_avg": 1.2 if is_home else 1.5,
-                "matches_count": 0,
+                "matches_count": len(matches),  # Return actual count even if < 3
+                "db_team_id": db_team_id,
+                "source": "insufficient_data",
             }
         
         # Calculate averages
@@ -539,6 +545,7 @@ async def get_match_analytics(
             "goals_for_avg": goals_for_avg,
             "goals_against_avg": goals_against_avg,
             "matches_count": matches_count,
+            "db_team_id": db_team_id,  # Include the database team ID for debugging
         }
     
     # Calculate league average goals
