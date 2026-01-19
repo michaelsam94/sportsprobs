@@ -3,6 +3,7 @@
 from typing import List, Optional
 from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, and_, or_
 import logging
 
 from app.core.dependencies import (
