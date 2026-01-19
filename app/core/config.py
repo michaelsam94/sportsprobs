@@ -63,7 +63,9 @@ class Settings(BaseSettings):
     THESPORTSDB_KEY: Optional[str] = Field(default="123", description="TheSportsDB API key (optional, free tier doesn't require)")
     
     # Gemini AI
-    GEMINI_API_KEY: str = Field(default="AIzaSyCbsDi2KMSJZ2EzhpACqMg-jNAWxalbfS4", description="Google Gemini API key for sports analysis")
+    # Get your API key from Google AI Studio: https://aistudio.google.com/app/apikey
+    # Set it via environment variable GEMINI_API_KEY or update the default below
+    GEMINI_API_KEY: str = Field(default="AIzaSyAV34RDttgGvoSOoSlVB6C089sVDqbVk3s", description="Google Gemini API key for sports analysis")
     GEMINI_MODEL: str = Field(default="gemini-3-flash-preview", description="Gemini model name (gemini-3-flash-preview, gemini-1.5-flash, gemini-1.5-pro)")
 
     # Proxy/Cache Settings
