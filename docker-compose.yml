@@ -1,3 +1,7 @@
+version: '3.8'
+
+services:
+  # FastAPI Backend
   api:
     build:
       context: .
@@ -65,3 +69,14 @@
     restart: unless-stopped
     networks:
       - sports-network
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  sports-network:
+    driver: bridge
+
