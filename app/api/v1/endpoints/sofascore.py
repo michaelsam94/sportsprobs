@@ -1,6 +1,6 @@
-"""SofaScore scraping endpoints."""
+"""Gemini AI sports analysis endpoints."""
 
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, Depends, Query, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 import logging
@@ -9,8 +9,7 @@ from app.core.dependencies import get_db, get_match_repository, get_team_reposit
 from app.core.config import settings
 from app.core.rate_limit import limiter
 from app.application.dto.match_dto import MatchResponseDTO
-from app.application.services.sofascore_service import SofaScoreService
-from app.infrastructure.external.sofascore_client import SofaScoreClient
+from app.infrastructure.external.gemini_client import GeminiClient
 from fastapi import Request
 
 logger = logging.getLogger(__name__)
@@ -18,164 +17,130 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-@router.post("/scrape-match", response_model=MatchResponseDTO, status_code=201)
+@router.post("/analyze-match", status_code=200)
 @limiter.limit(f"{settings.RATE_LIMIT_PER_MINUTE}/minute")
-async def scrape_match(
+async def analyze_match(
     request: Request,
-    match_url: str = Query(..., description="SofaScore match URL"),
-    db: AsyncSession = Depends(get_db),
+    home_team: str = Query(..., description="Home team name"),
+    away_team: str = Query(..., description="Away team name"),
+    sport: str = Query("football", description="Sport type (football, basketball, etc.)"),
+    league: Optional[str] = Query(None, description="League name (optional)"),
+    match_date: Optional[str] = Query(None, description="Match date (optional)"),
 ):
-    """Scrape a match from SofaScore and store in database.
+    """Get comprehensive match analysis using Gemini AI.
     
-    Example URL: https://www.sofascore.com/football/match/nk-maribor-debreceni-vsc/wNsvY#id:15389642
-    
-    This endpoint:
-    - Scrapes match data from SofaScore
-    - Creates/updates teams in database
-    - Stores match in database
-    - Returns the stored match data
-    """
-    try:
-        match_repository = get_match_repository(db)
-        team_repository = get_team_repository(db)
-        
-        service = SofaScoreService(match_repository, team_repository)
-        match = await service.scrape_and_store_match(match_url)
-        
-        logger.info(f"Successfully scraped and stored match from SofaScore: {match_url}")
-        return match
-        
-    except Exception as e:
-        logger.error(f"Error scraping match from SofaScore: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to scrape match: {str(e)}"
-        )
-
-
-@router.post("/scrape-team-history", response_model=List[MatchResponseDTO])
-@limiter.limit("10/minute")  # Lower rate limit for bulk operations
-async def scrape_team_history(
-    request: Request,
-    team_name: str = Query(..., description="Team name to scrape historical matches for"),
-    limit: int = Query(50, ge=1, le=100, description="Maximum number of matches to scrape"),
-    db: AsyncSession = Depends(get_db),
-):
-    """Scrape historical matches for a team from SofaScore.
-    
-    This endpoint:
-    - Searches for the team on SofaScore
-    - Scrapes their recent historical matches
-    - Stores matches in database
-    - Returns list of stored matches
-    
-    This helps build historical data for analytics.
-    """
-    try:
-        match_repository = get_match_repository(db)
-        team_repository = get_team_repository(db)
-        
-        service = SofaScoreService(match_repository, team_repository)
-        matches = await service.scrape_team_historical_data(team_name, limit=limit)
-        
-        logger.info(f"Successfully scraped {len(matches)} historical matches for team: {team_name}")
-        return matches
-        
-    except Exception as e:
-        logger.error(f"Error scraping team history from SofaScore: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to scrape team history: {str(e)}"
-        )
-
-
-@router.post("/search", status_code=200)
-@limiter.limit("5/minute")  # Lower rate limit for browser automation (slower)
-async def search_sofascore(
-    request: Request,
-    query: str = Query(..., description="Search query (team name, match, competition, etc.)"),
-    result_index: int = Query(0, ge=0, le=10, description="Index of result to select from dropdown (0 = first result)"),
-):
-    """Search SofaScore using browser automation (when URL query params don't work).
-    
-    This endpoint:
-    - Opens SofaScore website
-    - Types query into search input (#search-input)
-    - Waits for dropdown results (.z_dropdown)
-    - Selects the specified result from dropdown
-    - Returns the selected result data and final URL
-    
-    Use this when normal URL query parameters don't work for the sports-api.
+    This endpoint uses Google Gemini AI to provide detailed statistical analysis including:
+    - Team performance metrics (recent form, home/away records, league position)
+    - Head-to-head statistics
+    - Player statistics and key players
+    - Tactical analysis (formations, playing styles, strengths/weaknesses)
+    - Match-specific factors (home advantage, motivation, fatigue)
+    - Statistical predictions (probabilities, expected goals, likely scorelines)
+    - Key statistics (possession, shots, passes, corners, fouls, etc.)
+    - Advanced metrics (xG, xGA, xP)
+    - Trend analysis
+    - Risk factors (injuries, suspensions, poor form)
     
     Example:
-        POST /api/v1/sofascore/search?query=Manchester United&result_index=0
+        POST /api/v1/sofascore/analyze-match?home_team=Arsenal&away_team=Chelsea&league=Premier League
     """
     try:
-        client = SofaScoreClient()
-        result = await client.search_and_select_result(
-            query=query,
-            result_index=result_index
+        client = GeminiClient()
+        analysis = await client.analyze_match(
+            home_team=home_team,
+            away_team=away_team,
+            sport=sport,
+            league=league,
+            match_date=match_date
         )
         
-        logger.info(f"Successfully searched and selected result for query: {query}")
-        return result
+        logger.info(f"Successfully generated Gemini analysis for {home_team} vs {away_team}")
+        return analysis
         
     except Exception as e:
-        logger.error(f"Error searching SofaScore for query '{query}': {e}", exc_info=True)
+        logger.error(f"Error generating Gemini analysis: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to search SofaScore: {str(e)}"
+            detail=f"Failed to generate analysis: {str(e)}"
         )
 
 
-@router.post("/search-and-scrape", response_model=MatchResponseDTO, status_code=201)
-@limiter.limit("3/minute")  # Very low rate limit for browser automation + scraping
-async def search_and_scrape_match(
+@router.get("/team-statistics", status_code=200)
+@limiter.limit(f"{settings.RATE_LIMIT_PER_MINUTE}/minute")
+async def get_team_statistics(
     request: Request,
-    query: str = Query(..., description="Search query (team name, match, etc.)"),
-    result_index: int = Query(0, ge=0, le=10, description="Index of result to select from dropdown"),
-    db: AsyncSession = Depends(get_db),
+    team_name: str = Query(..., description="Team name"),
+    sport: str = Query("football", description="Sport type"),
+    league: Optional[str] = Query(None, description="League name (optional)"),
 ):
-    """Search SofaScore using browser automation and scrape the selected match data.
+    """Get comprehensive team statistics using Gemini AI.
     
-    This endpoint:
-    - Opens SofaScore website
-    - Searches using the search input
-    - Selects a result from dropdown
-    - Scrapes match data from the resulting page
-    - Stores match in database
-    - Returns the stored match data
+    This endpoint provides detailed team statistics including:
+    - Current season performance (wins, draws, losses, goals, points, position)
+    - Recent form (last 5-10 matches)
+    - Home and away records
+    - Key players and their statistics
+    - Tactical style and formation
+    - Strengths and weaknesses
+    - Average statistics per match
+    - Historical performance trends
     
     Example:
-        POST /api/v1/sofascore/search-and-scrape?query=Arsenal vs Chelsea&result_index=0
+        GET /api/v1/sofascore/team-statistics?team_name=Manchester United&league=Premier League
     """
     try:
-        client = SofaScoreClient()
-        
-        # Search and get match data using browser automation
-        match_data = await client.search_and_get_match_data(
-            query=query,
-            result_index=result_index
+        client = GeminiClient()
+        stats = await client.get_team_statistics(
+            team_name=team_name,
+            sport=sport,
+            league=league
         )
         
-        if not match_data or not match_data.get("final_url"):
-            raise ValueError(f"Could not find match data for query: {query}")
-        
-        # Use existing service to store the match
-        match_repository = get_match_repository(db)
-        team_repository = get_team_repository(db)
-        service = SofaScoreService(match_repository, team_repository)
-        
-        # Store the match using the final URL
-        match = await service.scrape_and_store_match(match_data["final_url"])
-        
-        logger.info(f"Successfully searched, scraped and stored match for query: {query}")
-        return match
+        logger.info(f"Successfully generated team statistics for {team_name}")
+        return stats
         
     except Exception as e:
-        logger.error(f"Error searching and scraping SofaScore for query '{query}': {e}", exc_info=True)
+        logger.error(f"Error getting team statistics: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to search and scrape match: {str(e)}"
+            detail=f"Failed to get team statistics: {str(e)}"
+        )
+
+
+@router.post("/analyze-match-with-context", status_code=200)
+@limiter.limit(f"{settings.RATE_LIMIT_PER_MINUTE}/minute")
+async def analyze_match_with_context(
+    request: Request,
+    match_data: Dict[str, Any],
+):
+    """Analyze match using existing match data as context.
+    
+    This endpoint enhances existing match data with comprehensive Gemini AI analysis.
+    Provide match data in the request body, and the AI will use it as context for deeper analysis.
+    
+    Expected match_data fields:
+    - home_team: Home team name
+    - away_team: Away team name
+    - sport: Sport type (default: football)
+    - league: League name (optional)
+    - match_date: Match date (optional)
+    - Any other relevant match information
+    
+    Example:
+        POST /api/v1/sofascore/analyze-match-with-context
+        Body: {{"home_team": "Arsenal", "away_team": "Chelsea", "league": "Premier League"}}
+    """
+    try:
+        client = GeminiClient()
+        analysis = await client.analyze_match_with_context(match_data=match_data)
+        
+        logger.info(f"Successfully generated contextual analysis")
+        return analysis
+        
+    except Exception as e:
+        logger.error(f"Error generating contextual analysis: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to generate contextual analysis: {str(e)}"
         )
 

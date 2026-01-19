@@ -61,6 +61,9 @@ class Settings(BaseSettings):
     # Free Sports APIs
     API_FOOTBALL_KEY: Optional[str] = Field(default="90c54fdc2884567488d21356849c8579", description="API-Football API key (optional)")
     THESPORTSDB_KEY: Optional[str] = Field(default="123", description="TheSportsDB API key (optional, free tier doesn't require)")
+    
+    # Gemini AI
+    GEMINI_API_KEY: str = Field(default="AIzaSyCbsDi2KMSJZ2EzhpACqMg-jNAWxalbfS4", description="Google Gemini API key for sports analysis")
 
     # Proxy/Cache Settings
     CACHE_ENABLED: bool = Field(default=True)
