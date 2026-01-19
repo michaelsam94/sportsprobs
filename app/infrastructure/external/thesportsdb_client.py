@@ -71,7 +71,7 @@ class TheSportsDBClient(APIClient):
         """Get live events from TheSportsDB.
         
         Note: TheSportsDB v1 API doesn't have a livescore endpoint.
-        This method uses eventsday.php with today's date as a workaround.
+        This method uses eventsday.php without a date filter to get all events.
         For true live scores, v2 API is required (premium only).
 
         Args:
@@ -80,13 +80,8 @@ class TheSportsDBClient(APIClient):
         Returns:
             API response dictionary
         """
-        from datetime import datetime
-        
-        # TheSportsDB v1 doesn't have livescore.php - use eventsday.php with today's date
-        # This will return today's events, which may include live ones
-        date = datetime.utcnow().strftime("%Y-%m-%d")
+        # Don't send date filter - just get events by sport
         params = {
-            "d": date,
             "s": sport,
         }
 
