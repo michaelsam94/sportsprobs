@@ -6,9 +6,10 @@ from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 import logging
 
-from app.infrastructure.security.api_key_service import api_key_service
+from app.infrastructure.security.api_key_service import get_api_key_service
 from app.infrastructure.security.ip_throttle import ip_throttle_service
 from app.infrastructure.cache.redis_client import redis_client
+from app.infrastructure.database.base import AsyncSessionLocal
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -94,9 +95,17 @@ class SecurityMiddleware(BaseHTTPMiddleware):
             )
 
         if api_key:
-            # Validate API key
+            # Validate API key using database
             logger.debug(f"Validating API key (first 10 chars: {api_key[:10]}...) from IP: {client_ip}")
-            key_info = api_key_service.validate_key(api_key)
+            # Get database session for API key validation
+            async with AsyncSessionLocal() as db:
+                try:
+                    api_key_service = get_api_key_service(db)
+                    key_info = await api_key_service.validate_key(api_key)
+                except Exception as e:
+                    logger.error(f"Error validating API key: {e}")
+                    key_info = None
+            
             if not key_info:
                 logger.warning(f"Invalid API key (first 10 chars: {api_key[:10]}...) from IP: {client_ip}")
                 return JSONResponse(

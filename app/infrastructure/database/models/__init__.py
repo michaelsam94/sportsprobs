@@ -6,6 +6,7 @@ from app.infrastructure.database.models.team_model import TeamModel
 from app.infrastructure.database.models.match_model import MatchModel
 from app.infrastructure.database.models.match_stat_model import MatchStatModel
 from app.infrastructure.database.models.historical_result_model import HistoricalResultModel
+from app.infrastructure.database.models.api_key_model import APIKeyModel
 
 __all__ = [
     "PlayerModel",
@@ -14,5 +15,6 @@ __all__ = [
     "MatchModel",
     "MatchStatModel",
     "HistoricalResultModel",
+    "APIKeyModel",
 ]
 

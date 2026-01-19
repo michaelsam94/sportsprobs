@@ -4,10 +4,13 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Header, Request
 from pydantic import BaseModel, Field
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.core.config import settings
 from app.core.rate_limit import limiter
 from app.core.auth import verify_admin_token
-from app.infrastructure.security.api_key_service import api_key_service, APIKey
+from app.core.dependencies import get_db, get_api_key_service
+from app.infrastructure.security.api_key_service import APIKey, APIKeyService
 from app.infrastructure.security.ip_throttle import ip_throttle_service
 
 router = APIRouter()
@@ -50,12 +53,14 @@ async def create_api_key(
     request: Request,
     key_data: APIKeyCreateDTO,
     authorization: Optional[str] = Header(None),
+    db: AsyncSession = Depends(get_db),
 ):
     """Create a new API key (Admin only)."""
     verify_admin_token(authorization)
 
     try:
-        plain_key, api_key = api_key_service.create_key(
+        api_key_service = get_api_key_service(db)
+        plain_key, api_key = await api_key_service.create_key(
             name=key_data.name,
             client_id=key_data.client_id,
             rate_limit_per_minute=key_data.rate_limit_per_minute,
@@ -90,15 +95,17 @@ async def list_api_keys(
     request: Request,
     client_id: Optional[str] = None,
     authorization: Optional[str] = Header(None),
+    db: AsyncSession = Depends(get_db),
 ):
     """List all API keys (Admin only)."""
     verify_admin_token(authorization)
 
     try:
+        api_key_service = get_api_key_service(db)
         if client_id:
-            keys = api_key_service.get_keys_by_client(client_id)
+            keys = await api_key_service.get_keys_by_client(client_id)
         else:
-            keys = api_key_service.list_keys()
+            keys = await api_key_service.list_keys()
 
         return [
             APIKeyResponseDTO(
@@ -127,12 +134,14 @@ async def revoke_api_key(
     request: Request,
     key_id: str,
     authorization: Optional[str] = Header(None),
+    db: AsyncSession = Depends(get_db),
 ):
     """Revoke an API key (Admin only)."""
     verify_admin_token(authorization)
 
     try:
-        deleted = api_key_service.revoke_key(key_id)
+        api_key_service = get_api_key_service(db)
+        deleted = await api_key_service.revoke_key(key_id)
         if not deleted:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
