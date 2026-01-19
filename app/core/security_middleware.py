@@ -53,10 +53,13 @@ class SecurityMiddleware(BaseHTTPMiddleware):
         # Check if path starts with any excluded prefix
         for prefix in self.excluded_path_prefixes:
             if request.url.path.startswith(prefix):
+                logger.debug(f"Skipping security for excluded prefix: {prefix}")
                 return await call_next(request)
         
         # Also check for admin endpoints (they use admin token, not API key)
-        if "/admin" in request.url.path:
+        # Admin endpoints are at /api/v1/admin/*
+        if "/admin" in request.url.path or request.url.path.startswith("/api/v1/admin"):
+            logger.debug(f"Skipping API key check for admin endpoint: {request.url.path}")
             return await call_next(request)
 
         # Get client IP
