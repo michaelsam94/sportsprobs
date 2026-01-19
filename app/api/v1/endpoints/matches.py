@@ -58,6 +58,7 @@ async def get_all_matches(
 async def get_live_matches(
     request: Request,
     league_id: Optional[int] = Query(None, description="Filter by league ID"),
+    date: Optional[str] = Query(None, description="Date filter (YYYY-MM-DD) - uses mobile app's local date instead of server time"),
     db: AsyncSession = Depends(get_db),
 ):
     """Get currently live matches from external APIs (API-Football, TheSportsDB).
@@ -70,6 +71,7 @@ async def get_live_matches(
     - Short cache TTL (30 seconds default)
     - Automatic fallback to alternative APIs
     - Normalized response format
+    - Accepts date parameter from mobile app to avoid server timezone issues
     """
     from app.application.services.events_service import EventsService
     
@@ -77,6 +79,7 @@ async def get_live_matches(
         events_service = EventsService()
         matches = await events_service.get_live_events(
             league_id=league_id,
+            date=date,  # Use date from mobile app if provided
             use_cache=True,
             cache_ttl=30,
         )

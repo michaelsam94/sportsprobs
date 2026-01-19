@@ -25,6 +25,7 @@ class EventsService:
     async def get_live_events(
         self,
         league_id: Optional[int] = None,
+        date: Optional[str] = None,  # Date from mobile app (YYYY-MM-DD)
         use_cache: bool = True,
         cache_ttl: int = 30,  # 30 seconds for live events
     ) -> List[MatchResponseDTO]:
@@ -32,6 +33,7 @@ class EventsService:
 
         Args:
             league_id: Optional league ID filter
+            date: Date from mobile app (YYYY-MM-DD) - uses this instead of server time
             use_cache: Whether to use cache
             cache_ttl: Cache TTL in seconds
 
@@ -41,6 +43,7 @@ class EventsService:
         cache_key_params = {
             "endpoint": "live_events",
             "league_id": league_id,
+            "date": date,  # Include date in cache key
         }
 
         # Check cache first
@@ -64,10 +67,12 @@ class EventsService:
         # Fallback to TheSportsDB if API-Football fails or returns no results
         if not events:
             try:
-                response = await self.thesportsdb.get_live_events()
+                response = await self.thesportsdb.get_live_events(date=date)
                 if response.get("events"):
-                    events = self._normalize_thesportsdb_events(response["events"])
-                    logger.info(f"Fetched {len(events)} live events from TheSportsDB")
+                    all_events = self._normalize_thesportsdb_events(response["events"])
+                    # Filter to only include LIVE matches (exclude finished, scheduled, etc.)
+                    events = [e for e in all_events if e.status == "LIVE"]
+                    logger.info(f"Fetched {len(events)} live events from TheSportsDB (filtered from {len(all_events)} total events)")
             except APIError as e:
                 logger.warning(f"TheSportsDB failed: {e}")
 

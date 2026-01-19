@@ -67,16 +67,18 @@ class TheSportsDBClient(APIClient):
     async def get_live_events(
         self,
         sport: str = "Soccer",
+        date: Optional[str] = None,  # Date from mobile app (YYYY-MM-DD) - uses this instead of server time
     ) -> Dict[str, Any]:
         """Get live events from TheSportsDB.
         
         Note: TheSportsDB v1 API doesn't have a livescore endpoint.
-        This method uses eventsday.php with today's date (required by API).
+        This method uses eventsday.php with the provided date (required by API).
         The date is only used for the API call format, not for filtering results.
         For true live scores, v2 API is required (premium only).
 
         Args:
             sport: Sport name (default: Soccer)
+            date: Date in YYYY-MM-DD format (optional, defaults to UTC now if not provided)
 
         Returns:
             API response dictionary
@@ -84,8 +86,9 @@ class TheSportsDBClient(APIClient):
         from datetime import datetime
         
         # TheSportsDB API requires a date parameter, but we filter by status, not date
-        # Use today's date as required by the API endpoint
-        date = datetime.utcnow().strftime("%Y-%m-%d")
+        # Use provided date from mobile app, or fallback to UTC now if not provided
+        if not date:
+            date = datetime.utcnow().strftime("%Y-%m-%d")
         params = {
             "d": date,
             "s": sport,
@@ -94,16 +97,8 @@ class TheSportsDBClient(APIClient):
         try:
             api_key = self.api_key or "123"  # Free tier API key is "123"
             response = await self.get(f"/{api_key}/eventsday.php", params=params)
-            # Filter for live events - status can be "Live", "1H", "2H", "HT" (first half, second half, half time)
-            # Note: We filter by status, not by date - the date param is just for API format
-            if response.get("events"):
-                live_statuses = ["Live", "1H", "2H", "HT"]  # These indicate a match is currently live
-                live_events = [
-                    event for event in response["events"]
-                    if event.get("strStatus") in live_statuses
-                ]
-                if live_events:
-                    response["events"] = live_events
+            # Return all events - filtering by live status will be done in the normalization step
+            # This allows us to see all matches from the API response
             return response
         except APIError as e:
             # Log as warning since TheSportsDB is a fallback service
