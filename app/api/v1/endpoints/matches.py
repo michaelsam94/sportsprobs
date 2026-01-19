@@ -344,7 +344,7 @@ async def get_match_analytics(
     
     # Helper function to find team in database by name or ID
     async def find_team_in_db(team_id: int, team_name: Optional[str] = None) -> Optional[int]:
-        """Try to find team in database by ID first, then by name."""
+        """Try to find team in database by ID first, then by name with multiple strategies."""
         from app.infrastructure.database.models.team_model import TeamModel
         
         # First try by ID
@@ -352,36 +352,74 @@ async def get_match_analytics(
         result = await db.execute(query)
         team = result.scalar_one_or_none()
         if team:
+            logger.debug(f"Found team {team_id} by ID in database: {team.name}")
             return team.id
         
         # If not found and we have a team name, try to find by name
         if team_name:
-            # Try exact match first
-            query = select(TeamModel).where(TeamModel.name.ilike(team_name))
+            clean_name = team_name.strip()
+            
+            # Strategy 1: Exact match (case-insensitive)
+            query = select(TeamModel).where(TeamModel.name.ilike(clean_name))
             result = await db.execute(query)
             team = result.scalar_one_or_none()
             if team:
+                logger.debug(f"Found team '{team_name}' by exact name match: ID {team.id}")
                 return team.id
             
-            # Try partial match (remove common suffixes/prefixes)
-            clean_name = team_name.strip()
-            # Remove common suffixes like "FC", "United", etc.
-            for suffix in [" FC", " United", " City", " Town", " Athletic", " Rovers"]:
+            # Strategy 2: Remove common suffixes and try exact match
+            suffixes_to_remove = [
+                " FC", " United", " City", " Town", " Athletic", " Rovers",
+                " FC.", " F.C.", " F.C", " CF", " CF.", " C.F.",
+                " United FC", " City FC", " Town FC"
+            ]
+            for suffix in suffixes_to_remove:
                 if clean_name.endswith(suffix):
-                    clean_name = clean_name[:-len(suffix)].strip()
-                    query = select(TeamModel).where(TeamModel.name.ilike(f"%{clean_name}%"))
+                    base_name = clean_name[:-len(suffix)].strip()
+                    query = select(TeamModel).where(TeamModel.name.ilike(base_name))
                     result = await db.execute(query)
                     team = result.scalar_one_or_none()
                     if team:
+                        logger.debug(f"Found team '{team_name}' by name (removed '{suffix}'): ID {team.id}")
                         return team.id
             
-            # Try fuzzy match (contains)
+            # Strategy 3: Fuzzy match - team name contains our search term
             query = select(TeamModel).where(TeamModel.name.ilike(f"%{clean_name}%"))
             result = await db.execute(query)
-            team = result.scalar_one_or_none()
-            if team:
-                return team.id
+            teams = result.scalars().all()
+            if teams:
+                # If multiple matches, prefer exact substring match
+                for team in teams:
+                    if clean_name.lower() in team.name.lower():
+                        logger.debug(f"Found team '{team_name}' by fuzzy match: ID {team.id} (matched: {team.name})")
+                        return team.id
+                # Otherwise return first match
+                logger.debug(f"Found team '{team_name}' by fuzzy match: ID {teams[0].id} (matched: {teams[0].name})")
+                return teams[0].id
+            
+            # Strategy 4: Reverse fuzzy - our search term contains team name
+            # This helps with cases like "NK Maribor" vs "Maribor"
+            all_teams_query = select(TeamModel)
+            all_teams_result = await db.execute(all_teams_query)
+            all_teams = all_teams_result.scalars().all()
+            
+            for team in all_teams:
+                if team.name and team.name.lower() in clean_name.lower():
+                    logger.debug(f"Found team '{team_name}' by reverse fuzzy match: ID {team.id} (matched: {team.name})")
+                    return team.id
+            
+            # Strategy 5: Word-based matching (split by spaces and match words)
+            search_words = set(clean_name.lower().split())
+            for team in all_teams:
+                if team.name:
+                    team_words = set(team.name.lower().split())
+                    # If at least 2 words match, consider it a match
+                    common_words = search_words.intersection(team_words)
+                    if len(common_words) >= 2:
+                        logger.debug(f"Found team '{team_name}' by word matching: ID {team.id} (matched: {team.name}, words: {common_words})")
+                        return team.id
         
+        logger.debug(f"Team not found in database: ID={team_id}, name='{team_name}'")
         return None
     
     # Helper function to get league-based averages when team-specific data is not available
@@ -597,6 +635,42 @@ async def get_match_analytics(
     
     # Get league name from match if available
     league_name = getattr(match, 'league', None)
+    
+    # Try to find teams and scrape historical data if not found
+    home_db_team_id = await find_team_in_db(home_team_id, home_team_name)
+    away_db_team_id = await find_team_in_db(away_team_id, away_team_name)
+    
+    # If teams not found and we have team names, try to scrape from SofaScore (async, don't wait)
+    if (not home_db_team_id or not away_db_team_id) and (home_team_name or away_team_name):
+        try:
+            from app.application.services.sofascore_service import SofaScoreService
+            from app.infrastructure.repositories.team_repository import TeamRepository
+            
+            team_repo = TeamRepository(db)
+            sofascore_service = SofaScoreService(repository, team_repo)
+            
+            # Scrape historical data for teams that weren't found (fire and forget)
+            if not home_db_team_id and home_team_name:
+                logger.info(f"Team '{home_team_name}' not found, attempting to scrape from SofaScore...")
+                # Note: This is async but we don't await it to avoid blocking the analytics response
+                # In production, you might want to use a background task queue
+                try:
+                    await sofascore_service.scrape_team_historical_data(home_team_name, limit=20)
+                    # Re-check after scraping
+                    home_db_team_id = await find_team_in_db(home_team_id, home_team_name)
+                except Exception as e:
+                    logger.warning(f"Failed to scrape data for team '{home_team_name}': {e}")
+            
+            if not away_db_team_id and away_team_name:
+                logger.info(f"Team '{away_team_name}' not found, attempting to scrape from SofaScore...")
+                try:
+                    await sofascore_service.scrape_team_historical_data(away_team_name, limit=20)
+                    # Re-check after scraping
+                    away_db_team_id = await find_team_in_db(away_team_id, away_team_name)
+                except Exception as e:
+                    logger.warning(f"Failed to scrape data for team '{away_team_name}': {e}")
+        except Exception as e:
+            logger.warning(f"Error attempting SofaScore scrape: {e}")
     
     home_stats = await calculate_team_stats(home_team_id, home_team_name, is_home=True, league_id=league_id, league_name=league_name)
     away_stats = await calculate_team_stats(away_team_id, away_team_name, is_home=False, league_id=league_id, league_name=league_name)
