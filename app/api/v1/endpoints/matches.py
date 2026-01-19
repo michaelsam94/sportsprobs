@@ -101,8 +101,10 @@ async def get_upcoming_matches(
     request: Request,
     limit: int = Query(100, ge=1, le=500),
     league_id: Optional[int] = Query(None, description="Filter by league ID"),
-    date: Optional[str] = Query(None, description="Date filter (YYYY-MM-DD)"),
-    filter_type: Optional[str] = Query(None, description="Filter type: 'today', 'this_week', 'this_month'"),
+    date: Optional[str] = Query(None, description="Date filter (YYYY-MM-DD) - deprecated, use 'from' instead"),
+    from_timestamp: Optional[str] = Query(None, alias="from", description="Start timestamp (ISO 8601 or Unix timestamp)"),
+    to_timestamp: Optional[str] = Query(None, alias="to", description="End timestamp (ISO 8601 or Unix timestamp)"),
+    filter_type: Optional[str] = Query(None, description="Filter type: 'today', 'this_week', 'this_month' (convenience parameter)"),
     db: AsyncSession = Depends(get_db),
 ):
     """Get upcoming matches that haven't started yet.
@@ -111,63 +113,127 @@ async def get_upcoming_matches(
     or from the database. Matches are filtered to only include those with status 'scheduled'
     or 'NS' (Not Started) and match_date in the future.
     
-    Filter types:
-    - 'today': Matches scheduled for today
-    - 'this_week': Matches scheduled for this week (today to 7 days from now)
-    - 'this_month': Matches scheduled for this month (today to end of month)
-    - None: All upcoming matches (default)
+    Date filtering options (in order of precedence):
+    1. from/to timestamps: Explicit date range using ISO 8601 or Unix timestamps
+    2. filter_type: Convenience parameter that calculates from/to automatically
+       - 'today': Matches scheduled for today
+       - 'this_week': Matches scheduled for this week (today to 7 days from now)
+       - 'this_month': Matches scheduled for this month (today to end of month)
+    3. date: Legacy parameter (YYYY-MM-DD) - deprecated, use 'from' instead
+    4. None: All upcoming matches (default)
     
     Features:
     - Caching (1 hour default TTL)
     - Automatic fallback to alternative APIs
     - Normalized response format
-    - Date range filtering
+    - Flexible date range filtering
     """
     from datetime import datetime, timedelta, timezone
     from calendar import monthrange
     
-    # Calculate date range based on filter_type
     # Use timezone-aware datetime to avoid comparison issues
     now = datetime.now(timezone.utc)
     start_date = now
     end_date = None
-    date_filter = date  # Use provided date if available
+    date_filter = date  # Use provided date if available (legacy support)
     
-    if filter_type == "today":
-        # Today only
-        start_date = now.replace(hour=0, minute=0, second=0, microsecond=0)
-        end_date = start_date + timedelta(days=1)
-        # If no explicit date provided, use today's date for API call
-        if not date_filter:
-            date_filter = start_date.strftime("%Y-%m-%d")
-    elif filter_type == "this_week":
-        # This week (today to 7 days from now)
-        start_date = now.replace(hour=0, minute=0, second=0, microsecond=0)
-        end_date = start_date + timedelta(days=7)
-        # Don't pass date filter to API, we'll get a range and filter
-        date_filter = None
-    elif filter_type == "this_month":
-        # This month (today to end of month)
-        start_date = now.replace(hour=0, minute=0, second=0, microsecond=0)
-        last_day = monthrange(now.year, now.month)[1]
-        end_date = datetime(now.year, now.month, last_day, 23, 59, 59, tzinfo=timezone.utc)
-        # Don't pass date filter to API, we'll get a range and filter
-        date_filter = None
+    # Parse from/to timestamps if provided (these take priority over filter_type)
+    if from_timestamp:
+        try:
+            # Try parsing as ISO 8601
+            if 'T' in from_timestamp or '+' in from_timestamp or from_timestamp.endswith('Z'):
+                start_date = datetime.fromisoformat(from_timestamp.replace('Z', '+00:00'))
+            else:
+                # Try as Unix timestamp
+                start_date = datetime.fromtimestamp(float(from_timestamp), tz=timezone.utc)
+            # Ensure timezone-aware
+            if start_date.tzinfo is None:
+                start_date = start_date.replace(tzinfo=timezone.utc)
+            else:
+                start_date = start_date.astimezone(timezone.utc)
+            logger.info(f"Using from_timestamp: {start_date}")
+        except (ValueError, TypeError) as e:
+            logger.warning(f"Invalid from_timestamp format: {from_timestamp}, error: {e}")
+            start_date = now
+    
+    if to_timestamp:
+        try:
+            # Try parsing as ISO 8601
+            if 'T' in to_timestamp or '+' in to_timestamp or to_timestamp.endswith('Z'):
+                end_date = datetime.fromisoformat(to_timestamp.replace('Z', '+00:00'))
+            else:
+                # Try as Unix timestamp
+                end_date = datetime.fromtimestamp(float(to_timestamp), tz=timezone.utc)
+            # Ensure timezone-aware
+            if end_date.tzinfo is None:
+                end_date = end_date.replace(tzinfo=timezone.utc)
+            else:
+                end_date = end_date.astimezone(timezone.utc)
+            logger.info(f"Using to_timestamp: {end_date}")
+        except (ValueError, TypeError) as e:
+            logger.warning(f"Invalid to_timestamp format: {to_timestamp}, error: {e}")
+            end_date = None
+    
+    # If from/to not provided, calculate from filter_type (convenience parameter)
+    # Only use filter_type if explicit timestamps were NOT provided
+    if not from_timestamp and not to_timestamp and filter_type:
+        if filter_type == "today":
+            # Today only
+            start_date = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            end_date = start_date + timedelta(days=1)
+            # If no explicit date provided, use today's date for API call
+            if not date_filter:
+                date_filter = start_date.strftime("%Y-%m-%d")
+        elif filter_type == "this_week":
+            # This week (today to 7 days from now)
+            start_date = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            end_date = start_date + timedelta(days=7)
+            # Don't pass date filter to API, we'll get a range and filter
+            date_filter = None
+        elif filter_type == "this_month":
+            # This month (today to end of month)
+            start_date = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            last_day = monthrange(now.year, now.month)[1]
+            end_date = datetime(now.year, now.month, last_day, 23, 59, 59, tzinfo=timezone.utc)
+            # Don't pass date filter to API, we'll get a range and filter
+            date_filter = None
     
     from app.application.services.events_service import EventsService
     
+    # Determine date filter for EventsService API call
+    # If we have a specific date range (from/to or filter_type="today"), use it
+    # Otherwise, get a larger set to filter
+    api_date_filter = date_filter
+    if from_timestamp and to_timestamp and end_date:
+        # If explicit from/to provided, check if range is one day or less
+        days_diff = (end_date - start_date).total_seconds() / 86400  # Convert to days
+        if days_diff <= 1:
+            # If range is one day or less, use date string for API
+            api_date_filter = start_date.strftime("%Y-%m-%d")
+            logger.info(f"Using single-day date filter: {api_date_filter}")
+        else:
+            # For multi-day ranges, don't pass date filter - get all and filter
+            api_date_filter = None
+            logger.info(f"Multi-day range detected ({days_diff:.1f} days), fetching all events and filtering")
+    elif not from_timestamp and filter_type == "today":
+        # Legacy: filter_type="today" uses date string
+        api_date_filter = date_filter
+    
     try:
         events_service = EventsService()
-        # Get upcoming events - pass date filter for "today", otherwise get more events
+        # Get upcoming events - pass date filter for specific dates, otherwise get more events
+        fetch_limit = limit * 3 if (from_timestamp or filter_type) else limit * 2
         all_matches = await events_service.get_upcoming_events(
             league_id=league_id,
-            date=date_filter,
-            limit=limit * 3 if filter_type else limit * 2,  # Get more to filter for date ranges
+            date=api_date_filter,
+            limit=fetch_limit,
             use_cache=True,
             cache_ttl=3600,
         )
         
-        logger.info(f"Fetched {len(all_matches)} upcoming events from EventsService, filter_type={filter_type}")
+        logger.info(f"Fetched {len(all_matches)} upcoming events from EventsService")
+        logger.info(f"Filter parameters: from={from_timestamp}, to={to_timestamp}, filter_type={filter_type}")
+        logger.info(f"Date range: start_date={start_date.isoformat()}, end_date={end_date.isoformat() if end_date else None}")
         
         # Filter by date range and status
         filtered_matches = []
@@ -183,16 +249,18 @@ async def get_upcoming_matches(
                     # Convert to UTC if different timezone
                     match_date = match_date.astimezone(timezone.utc)
                 
-                # Ensure match is in the future
-                if match_date >= start_date:
-                    # Check date range if end_date is specified
-                    if end_date is None or match_date <= end_date:
-                        # Only include scheduled/not started matches
-                        status_lower = (match.status or "").lower()
-                        if match.status in ["scheduled", "NS", None] or "scheduled" in status_lower or "not started" in status_lower:
-                            filtered_matches.append(match)
+                # Check if match is within the date range
+                is_in_range = match_date >= start_date
+                if end_date:
+                    is_in_range = is_in_range and match_date <= end_date
+                
+                if is_in_range:
+                    # Only include scheduled/not started matches
+                    status_lower = (match.status or "").lower()
+                    if match.status in ["scheduled", "NS", None] or "scheduled" in status_lower or "not started" in status_lower:
+                        filtered_matches.append(match)
         
-        logger.info(f"Filtered to {len(filtered_matches)} matches after date/status filtering")
+        logger.info(f"Filtered to {len(filtered_matches)} matches after date/status filtering (range: {start_date.isoformat()} to {end_date.isoformat() if end_date else 'unlimited'})")
         
         # If no matches found from external API and we have a date filter, try database fallback
         if len(filtered_matches) == 0 and filter_type:
