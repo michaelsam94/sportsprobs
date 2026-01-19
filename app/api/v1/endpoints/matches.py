@@ -123,11 +123,12 @@ async def get_upcoming_matches(
     - Normalized response format
     - Date range filtering
     """
-    from datetime import datetime, timedelta
+    from datetime import datetime, timedelta, timezone
     from calendar import monthrange
     
     # Calculate date range based on filter_type
-    now = datetime.utcnow()
+    # Use timezone-aware datetime to avoid comparison issues
+    now = datetime.now(timezone.utc)
     start_date = now
     end_date = None
     date_filter = date  # Use provided date if available
@@ -149,7 +150,7 @@ async def get_upcoming_matches(
         # This month (today to end of month)
         start_date = now.replace(hour=0, minute=0, second=0, microsecond=0)
         last_day = monthrange(now.year, now.month)[1]
-        end_date = datetime(now.year, now.month, last_day, 23, 59, 59)
+        end_date = datetime(now.year, now.month, last_day, 23, 59, 59, tzinfo=timezone.utc)
         # Don't pass date filter to API, we'll get a range and filter
         date_filter = None
     
@@ -174,6 +175,14 @@ async def get_upcoming_matches(
             # Check if match is in the future and not started
             match_date = match.match_date
             if match_date:
+                # Normalize match_date to timezone-aware if needed
+                if match_date.tzinfo is None:
+                    # Assume UTC if timezone-naive
+                    match_date = match_date.replace(tzinfo=timezone.utc)
+                elif match_date.tzinfo != timezone.utc:
+                    # Convert to UTC if different timezone
+                    match_date = match_date.astimezone(timezone.utc)
+                
                 # Ensure match is in the future
                 if match_date >= start_date:
                     # Check date range if end_date is specified
