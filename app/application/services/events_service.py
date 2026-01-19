@@ -8,7 +8,7 @@ from app.infrastructure.external.api_football_client import APIFootballClient
 from app.infrastructure.external.thesportsdb_client import TheSportsDBClient
 from app.infrastructure.external.api_client import APIError
 from app.infrastructure.cache.cache_service import cache_service
-from app.application.dto.match_dto import MatchResponseDTO, TeamDTO, LeagueDTO
+from app.application.dto.match_dto import MatchResponseDTO
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -191,20 +191,28 @@ class EventsService:
                 # Build league
                 league = league_data.get("name", "Unknown")
 
+                # Ensure team IDs are valid (> 0)
+                home_team_id = home_team.get("id") or 1
+                away_team_id = away_team.get("id") or 1
+                if home_team_id <= 0:
+                    home_team_id = 1
+                if away_team_id <= 0:
+                    away_team_id = 1
+                
                 event = MatchResponseDTO(
                     id=fixture_data.get("id", 0),
-                    home_team_id=home_team.get("id", 0),
-                    home_team_name=home_team.get("name", "Unknown"),
-                    away_team_id=away_team.get("id", 0),
-                    away_team_name=away_team.get("name", "Unknown"),
-                    league_id=league_data.get("id", 0),
-                    league_name=league,
-                    scheduled_time=start_time,
+                    home_team_id=home_team_id,
+                    away_team_id=away_team_id,
+                    sport="football",  # Default sport
+                    league=league,
+                    match_date=start_time,
                     status=status,
                     home_score=home_score,
                     away_score=away_score,
                     venue=fixture_data.get("venue", {}).get("name"),
-                    season=league_data.get("season"),
+                    attendance=None,
+                    created_at=datetime.utcnow(),
+                    updated_at=datetime.utcnow(),
                 )
                 events.append(event)
             except Exception as e:
@@ -236,20 +244,28 @@ class EventsService:
                 home_score = event_data.get("intHomeScore")
                 away_score = event_data.get("intAwayScore")
 
+                # Ensure team IDs are valid (> 0)
+                home_team_id = event_data.get("idHomeTeam") or 1
+                away_team_id = event_data.get("idAwayTeam") or 1
+                if home_team_id <= 0:
+                    home_team_id = 1
+                if away_team_id <= 0:
+                    away_team_id = 1
+                
                 event = MatchResponseDTO(
                     id=event_data.get("idEvent", 0),
-                    home_team_id=event_data.get("idHomeTeam", 0),
-                    home_team_name=event_data.get("strHomeTeam", "Unknown"),
-                    away_team_id=event_data.get("idAwayTeam", 0),
-                    away_team_name=event_data.get("strAwayTeam", "Unknown"),
-                    league_id=event_data.get("idLeague", 0),
-                    league_name=event_data.get("strLeague", "Unknown"),
-                    scheduled_time=start_time,
+                    home_team_id=home_team_id,
+                    away_team_id=away_team_id,
+                    sport="football",  # Default sport
+                    league=event_data.get("strLeague", "Unknown"),
+                    match_date=start_time,
                     status=status,
                     home_score=home_score,
                     away_score=away_score,
                     venue=event_data.get("strVenue"),
-                    season=event_data.get("intSeason"),
+                    attendance=None,
+                    created_at=datetime.utcnow(),
+                    updated_at=datetime.utcnow(),
                 )
                 events.append(event)
             except Exception as e:
