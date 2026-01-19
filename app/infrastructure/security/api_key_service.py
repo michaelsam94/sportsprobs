@@ -201,6 +201,10 @@ class APIKeyService:
         Returns:
             APIKey object if valid, None otherwise
         """
+        # Reload keys from file to ensure we have the latest keys
+        # This is important in multi-process/container environments
+        self._load_keys()
+        
         key_hash = self._hash_key(api_key)
 
         for key in self._keys.values():
@@ -221,6 +225,7 @@ class APIKeyService:
 
                 return key
 
+        logger.warning(f"API key validation failed - key not found")
         return None
 
     def get_key_by_id(self, key_id: str) -> Optional[APIKey]:

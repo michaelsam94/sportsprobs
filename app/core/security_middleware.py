@@ -95,9 +95,10 @@ class SecurityMiddleware(BaseHTTPMiddleware):
 
         if api_key:
             # Validate API key
+            logger.debug(f"Validating API key (first 10 chars: {api_key[:10]}...) from IP: {client_ip}")
             key_info = api_key_service.validate_key(api_key)
             if not key_info:
-                logger.warning(f"Invalid API key from IP: {client_ip}")
+                logger.warning(f"Invalid API key (first 10 chars: {api_key[:10]}...) from IP: {client_ip}")
                 return JSONResponse(
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     content={
@@ -172,11 +173,15 @@ class SecurityMiddleware(BaseHTTPMiddleware):
             if len(parts) == 2:
                 scheme = parts[0].lower()
                 if scheme in ["apikey", "bearer"]:
+                    logger.debug(f"Extracted API key from Authorization header (scheme: {scheme})")
                     return parts[1]
+            else:
+                logger.debug(f"Invalid Authorization header format: {authorization[:20]}...")
 
         # Check X-API-Key header
         api_key = request.headers.get("X-API-Key")
         if api_key:
+            logger.debug(f"Extracted API key from X-API-Key header")
             return api_key
 
         return None
