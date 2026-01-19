@@ -130,44 +130,76 @@ async def get_upcoming_matches(
     now = datetime.utcnow()
     start_date = now
     end_date = None
+    date_filter = date  # Use provided date if available
     
     if filter_type == "today":
         # Today only
         start_date = now.replace(hour=0, minute=0, second=0, microsecond=0)
         end_date = start_date + timedelta(days=1)
+        # If no explicit date provided, use today's date for API call
+        if not date_filter:
+            date_filter = start_date.strftime("%Y-%m-%d")
     elif filter_type == "this_week":
         # This week (today to 7 days from now)
         start_date = now.replace(hour=0, minute=0, second=0, microsecond=0)
         end_date = start_date + timedelta(days=7)
+        # Don't pass date filter to API, we'll get a range and filter
+        date_filter = None
     elif filter_type == "this_month":
         # This month (today to end of month)
         start_date = now.replace(hour=0, minute=0, second=0, microsecond=0)
         last_day = monthrange(now.year, now.month)[1]
         end_date = datetime(now.year, now.month, last_day, 23, 59, 59)
+        # Don't pass date filter to API, we'll get a range and filter
+        date_filter = None
     
     from app.application.services.events_service import EventsService
     
     try:
         events_service = EventsService()
-        # Get all upcoming events
+        # Get upcoming events - pass date filter for "today", otherwise get more events
         all_matches = await events_service.get_upcoming_events(
             league_id=league_id,
-            date=date,
-            limit=limit * 2,  # Get more to filter
+            date=date_filter,
+            limit=limit * 3 if filter_type else limit * 2,  # Get more to filter for date ranges
             use_cache=True,
             cache_ttl=3600,
         )
+        
+        logger.info(f"Fetched {len(all_matches)} upcoming events from EventsService, filter_type={filter_type}")
         
         # Filter by date range and status
         filtered_matches = []
         for match in all_matches:
             # Check if match is in the future and not started
             match_date = match.match_date
-            if match_date and match_date >= start_date:
-                if end_date is None or match_date <= end_date:
-                    # Only include scheduled/not started matches
-                    if match.status in ["scheduled", "NS", None] or (match.status and "scheduled" in match.status.lower()):
-                        filtered_matches.append(match)
+            if match_date:
+                # Ensure match is in the future
+                if match_date >= start_date:
+                    # Check date range if end_date is specified
+                    if end_date is None or match_date <= end_date:
+                        # Only include scheduled/not started matches
+                        status_lower = (match.status or "").lower()
+                        if match.status in ["scheduled", "NS", None] or "scheduled" in status_lower or "not started" in status_lower:
+                            filtered_matches.append(match)
+        
+        logger.info(f"Filtered to {len(filtered_matches)} matches after date/status filtering")
+        
+        # If no matches found from external API and we have a date filter, try database fallback
+        if len(filtered_matches) == 0 and filter_type:
+            logger.info(f"No matches from external API for filter_type={filter_type}, trying database fallback")
+            repository = get_match_repository(db)
+            service = MatchService(repository)
+            try:
+                if end_date:
+                    matches = await repository.get_by_date_range(start_date, end_date)
+                    # Filter to only scheduled/upcoming
+                    filtered = [m for m in matches if m.status in ["scheduled", "NS", None] and m.match_date and m.match_date >= now]
+                    logger.info(f"Database fallback: Found {len(filtered)} matches in database for date range")
+                    if filtered:
+                        return [await service._entity_to_dto(m) for m in filtered[:limit]]
+            except Exception as db_error:
+                logger.warning(f"Database fallback failed: {db_error}")
         
         # Sort by date and limit
         filtered_matches.sort(key=lambda x: x.match_date or datetime.max)
@@ -179,14 +211,21 @@ async def get_upcoming_matches(
         repository = get_match_repository(db)
         service = MatchService(repository)
         
-        # Use repository method with date range if available
-        if end_date:
-            matches = await repository.get_by_date_range(start_date, end_date)
-            # Filter to only scheduled/upcoming
-            filtered = [m for m in matches if m.status in ["scheduled", "NS", None] and m.match_date >= now]
-            return [await service._entity_to_dto(m) for m in filtered[:limit]]
-        else:
-            return await service.get_upcoming_matches(limit=limit)
+        try:
+            # Use repository method with date range if available
+            if end_date:
+                matches = await repository.get_by_date_range(start_date, end_date)
+                # Filter to only scheduled/upcoming
+                filtered = [m for m in matches if m.status in ["scheduled", "NS", None] and m.match_date and m.match_date >= now]
+                logger.info(f"Fallback: Found {len(filtered)} matches in database for date range")
+                return [await service._entity_to_dto(m) for m in filtered[:limit]]
+            else:
+                matches = await service.get_upcoming_matches(limit=limit)
+                logger.info(f"Fallback: Found {len(matches)} upcoming matches in database")
+                return matches
+        except Exception as db_error:
+            logger.error(f"Database fallback also failed: {db_error}", exc_info=True)
+            return []  # Return empty list if both API and database fail
 
 
 @router.get("/finished", response_model=List[MatchResponseDTO])
