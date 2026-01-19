@@ -8,6 +8,10 @@ import json
 import google.generativeai as genai
 
 from app.core.config import settings
+from app.infrastructure.cache.cache_service import cache_service
+
+# Default cache TTL for Gemini responses (1 hour)
+DEFAULT_GEMINI_CACHE_TTL = getattr(settings, 'GEMINI_CACHE_TTL', 3600)
 
 logger = logging.getLogger(__name__)
 
@@ -315,7 +319,9 @@ IMPORTANT:
         sport: str = "football",
         league: Optional[str] = None,
         match_date: Optional[str] = None,
-        context: Optional[Dict[str, Any]] = None
+        context: Optional[Dict[str, Any]] = None,
+        use_cache: bool = True,
+        cache_ttl: int = DEFAULT_GEMINI_CACHE_TTL,
     ) -> Dict[str, Any]:
         """Get comprehensive match analysis using Gemini AI.
         
@@ -326,10 +332,29 @@ IMPORTANT:
             league: League name (optional)
             match_date: Match date (optional)
             context: Additional context data (optional)
+            use_cache: Whether to use cache (default: True)
+            cache_ttl: Cache TTL in seconds (default: 3600 = 1 hour)
         
         Returns:
             Dictionary with comprehensive match analysis
         """
+        # Check cache first
+        if use_cache:
+            cache_params = {
+                "home_team": home_team.lower().strip(),
+                "away_team": away_team.lower().strip(),
+                "sport": sport.lower().strip(),
+            }
+            if league:
+                cache_params["league"] = league.lower().strip()
+            if match_date:
+                cache_params["match_date"] = match_date.strip()
+            
+            cached_analysis = await cache_service.get("gemini_analysis", cache_params)
+            if cached_analysis:
+                logger.info(f"Returning cached Gemini analysis for {home_team} vs {away_team}")
+                return cached_analysis
+        
         try:
             prompt = self._get_comprehensive_analysis_prompt(
                 home_team=home_team,
@@ -389,6 +414,26 @@ IMPORTANT:
             analysis_data["generated_at"] = datetime.utcnow().isoformat()
             analysis_data["source"] = "gemini_ai"
             
+            # Cache the response
+            if use_cache:
+                cache_params = {
+                    "home_team": home_team.lower().strip(),
+                    "away_team": away_team.lower().strip(),
+                    "sport": sport.lower().strip(),
+                }
+                if league:
+                    cache_params["league"] = league.lower().strip()
+                if match_date:
+                    cache_params["match_date"] = match_date.strip()
+                
+                await cache_service.set(
+                    "gemini_analysis",
+                    analysis_data,
+                    params=cache_params,
+                    ttl_seconds=cache_ttl,
+                )
+                logger.info(f"Cached Gemini analysis for {home_team} vs {away_team} (TTL: {cache_ttl}s)")
+            
             logger.info(f"Successfully generated analysis for {home_team} vs {away_team}")
             return analysis_data
             
@@ -400,7 +445,9 @@ IMPORTANT:
         self,
         team_name: str,
         sport: str = "football",
-        league: Optional[str] = None
+        league: Optional[str] = None,
+        use_cache: bool = True,
+        cache_ttl: int = DEFAULT_GEMINI_CACHE_TTL,
     ) -> Dict[str, Any]:
         """Get comprehensive team statistics using Gemini AI.
         
@@ -408,10 +455,26 @@ IMPORTANT:
             team_name: Team name
             sport: Sport type (default: football)
             league: League name (optional)
+            use_cache: Whether to use cache (default: True)
+            cache_ttl: Cache TTL in seconds (default: 3600 = 1 hour)
         
         Returns:
             Dictionary with comprehensive team statistics
         """
+        # Check cache first
+        if use_cache:
+            cache_params = {
+                "team_name": team_name.lower().strip(),
+                "sport": sport.lower().strip(),
+            }
+            if league:
+                cache_params["league"] = league.lower().strip()
+            
+            cached_stats = await cache_service.get("gemini_team_stats", cache_params)
+            if cached_stats:
+                logger.info(f"Returning cached team statistics for {team_name}")
+                return cached_stats
+        
         prompt = f"""You are an expert sports analyst. Provide comprehensive statistics for {team_name} in {sport}.
 
 Include:
@@ -447,6 +510,24 @@ Return as JSON with detailed statistics."""
                 stats = json.loads(response_text)
                 stats["generated_at"] = datetime.utcnow().isoformat()
                 stats["source"] = "gemini_ai"
+                
+                # Cache the response
+                if use_cache:
+                    cache_params = {
+                        "team_name": team_name.lower().strip(),
+                        "sport": sport.lower().strip(),
+                    }
+                    if league:
+                        cache_params["league"] = league.lower().strip()
+                    
+                    await cache_service.set(
+                        "gemini_team_stats",
+                        stats,
+                        params=cache_params,
+                        ttl_seconds=cache_ttl,
+                    )
+                    logger.info(f"Cached team statistics for {team_name} (TTL: {cache_ttl}s)")
+                
                 return stats
             except json.JSONDecodeError:
                 return {

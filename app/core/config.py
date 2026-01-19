@@ -67,6 +67,7 @@ class Settings(BaseSettings):
     # Set it via environment variable GEMINI_API_KEY or update the default below
     GEMINI_API_KEY: str = Field(default="AIzaSyAV34RDttgGvoSOoSlVB6C089sVDqbVk3s", description="Google Gemini API key for sports analysis")
     GEMINI_MODEL: str = Field(default="gemini-3-flash-preview", description="Gemini model name (gemini-3-flash-preview, gemini-1.5-flash, gemini-1.5-pro)")
+    GEMINI_CACHE_TTL: int = Field(default=3600, description="Gemini analysis cache TTL in seconds (default: 1 hour)")
 
     # Proxy/Cache Settings
     CACHE_ENABLED: bool = Field(default=True)
