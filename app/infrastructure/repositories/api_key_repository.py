@@ -4,7 +4,6 @@ from typing import Optional, List
 from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update, delete
-from sqlalchemy.orm import selectinload
 
 from app.infrastructure.database.models.api_key_model import APIKeyModel
 from app.infrastructure.security.api_key_service import APIKey
