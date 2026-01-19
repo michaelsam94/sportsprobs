@@ -3,6 +3,7 @@
 from typing import List, Optional
 from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
+import logging
 
 from app.core.dependencies import (
     get_db,
@@ -16,6 +17,8 @@ from app.application.dto.match_dto import (
     MatchResponseDTO,
 )
 from app.application.services.match_service import MatchService
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -53,25 +56,42 @@ async def get_all_matches(
 @limiter.limit(f"{settings.RATE_LIMIT_PER_MINUTE}/minute")
 async def get_live_matches(
     request: Request,
+    league_id: Optional[int] = Query(None, description="Filter by league ID"),
     db: AsyncSession = Depends(get_db),
 ):
-    """Get currently live matches (cached for 60 seconds)."""
-    from app.infrastructure.cache.live_matches_cache import LiveMatchesCache
+    """Get currently live matches from external APIs (API-Football, TheSportsDB).
     
-    # Check cache first
-    cached = await LiveMatchesCache.get_live_matches()
-    if cached:
-        return cached
+    This endpoint fetches live matches from free sports APIs:
+    - API-Football (primary)
+    - TheSportsDB (fallback)
     
-    # Cache miss - fetch from database
-    repository = get_match_repository(db)
-    service = MatchService(repository)
-    matches = await service.get_live_matches()
+    Features:
+    - Short cache TTL (30 seconds default)
+    - Automatic fallback to alternative APIs
+    - Normalized response format
+    """
+    from app.application.services.events_service import EventsService
     
-    # Cache the result
-    await LiveMatchesCache.set_live_matches(matches, ttl=60)
-    
-    return matches
+    try:
+        events_service = EventsService()
+        matches = await events_service.get_live_events(
+            league_id=league_id,
+            use_cache=True,
+            cache_ttl=30,
+        )
+        return matches
+    except Exception as e:
+        logger.error(f"Error fetching live matches: {e}", exc_info=True)
+        # Fallback to database if external APIs fail
+        from app.infrastructure.cache.live_matches_cache import LiveMatchesCache
+        cached = await LiveMatchesCache.get_live_matches()
+        if cached:
+            return cached
+        
+        repository = get_match_repository(db)
+        service = MatchService(repository)
+        matches = await service.get_live_matches()
+        return matches
 
 
 @router.get("/upcoming", response_model=List[MatchResponseDTO])
@@ -80,12 +100,39 @@ async def get_upcoming_matches(
     request: Request,
     limit: int = Query(10, ge=1, le=100),
     league_id: Optional[int] = Query(None, description="Filter by league ID"),
+    date: Optional[str] = Query(None, description="Date filter (YYYY-MM-DD)"),
     db: AsyncSession = Depends(get_db),
 ):
-    """Get upcoming matches."""
-    repository = get_match_repository(db)
-    service = MatchService(repository)
-    return await service.get_upcoming_matches(limit=limit)
+    """Get upcoming matches from external APIs (API-Football, TheSportsDB).
+    
+    This endpoint fetches upcoming matches from free sports APIs:
+    - API-Football (primary)
+    - TheSportsDB (fallback)
+    
+    Features:
+    - Caching (1 hour default TTL)
+    - Automatic fallback to alternative APIs
+    - Normalized response format
+    - Pagination support
+    """
+    from app.application.services.events_service import EventsService
+    
+    try:
+        events_service = EventsService()
+        matches = await events_service.get_upcoming_events(
+            league_id=league_id,
+            date=date,
+            limit=limit,
+            use_cache=True,
+            cache_ttl=3600,
+        )
+        return matches
+    except Exception as e:
+        logger.error(f"Error fetching upcoming matches: {e}", exc_info=True)
+        # Fallback to database if external APIs fail
+        repository = get_match_repository(db)
+        service = MatchService(repository)
+        return await service.get_upcoming_matches(limit=limit)
 
 
 @router.get("/finished", response_model=List[MatchResponseDTO])
