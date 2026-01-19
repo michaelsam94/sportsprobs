@@ -3,6 +3,7 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse
 
 from app.core.config import settings
 from app.core.logging_config import setup_logging
@@ -57,6 +58,17 @@ def create_application() -> FastAPI:
 
     # Include API routers
     app.include_router(api_router, prefix=settings.API_V1_PREFIX)
+
+    # Add redirect for /api/docs to /docs
+    @app.get("/api/docs", include_in_schema=False)
+    async def redirect_api_docs():
+        """Redirect /api/docs to /docs."""
+        return RedirectResponse(url="/docs")
+
+    @app.get("/api/redoc", include_in_schema=False)
+    async def redirect_api_redoc():
+        """Redirect /api/redoc to /redoc."""
+        return RedirectResponse(url="/redoc")
 
     @app.get("/")
     async def root():
