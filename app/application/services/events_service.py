@@ -188,6 +188,10 @@ class EventsService:
                 home_team = teams_data.get("home", {})
                 away_team = teams_data.get("away", {})
 
+                # Extract team names
+                home_team_name = home_team.get("name")
+                away_team_name = away_team.get("name")
+
                 # Build league
                 league = league_data.get("name", "Unknown")
 
@@ -203,6 +207,8 @@ class EventsService:
                     id=fixture_data.get("id", 0),
                     home_team_id=home_team_id,
                     away_team_id=away_team_id,
+                    home_team_name=home_team_name,
+                    away_team_name=away_team_name,
                     sport="football",  # Default sport
                     league=league,
                     match_date=start_time,
@@ -244,6 +250,10 @@ class EventsService:
                 home_score = event_data.get("intHomeScore")
                 away_score = event_data.get("intAwayScore")
 
+                # Extract team names
+                home_team_name = event_data.get("strHomeTeam")
+                away_team_name = event_data.get("strAwayTeam")
+
                 # Ensure team IDs are valid (> 0)
                 home_team_id = event_data.get("idHomeTeam") or 1
                 away_team_id = event_data.get("idAwayTeam") or 1
@@ -256,6 +266,8 @@ class EventsService:
                     id=event_data.get("idEvent", 0),
                     home_team_id=home_team_id,
                     away_team_id=away_team_id,
+                    home_team_name=home_team_name,
+                    away_team_name=away_team_name,
                     sport="football",  # Default sport
                     league=event_data.get("strLeague", "Unknown"),
                     match_date=start_time,

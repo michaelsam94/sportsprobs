@@ -10,6 +10,8 @@ class MatchBaseDTO(BaseModel):
 
     home_team_id: int = Field(..., gt=0)
     away_team_id: int = Field(..., gt=0)
+    home_team_name: Optional[str] = Field(None, max_length=200, description="Home team name")
+    away_team_name: Optional[str] = Field(None, max_length=200, description="Away team name")
     sport: str = Field(..., min_length=1, max_length=50)
     league: Optional[str] = Field(None, max_length=100)
     match_date: datetime
