@@ -24,7 +24,7 @@ class TheSportsDBClient(APIClient):
             api_key=api_key,
             timeout=30,
             max_retries=3,
-            rate_limit_per_minute=100,  # Free tier: 100 requests/day, but we'll be conservative
+            rate_limit_per_minute=30,  # Free tier: 30 requests/minute (per documentation)
         )
 
     async def get_events_by_date(
@@ -52,7 +52,7 @@ class TheSportsDBClient(APIClient):
         }
 
         try:
-            api_key = self.api_key or "1"  # Default to "1" for free tier
+            api_key = self.api_key or "123"  # Free tier API key is "123"
             response = await self.get(f"/{api_key}/eventsday.php", params=params)
             return response
         except APIError as e:
@@ -69,6 +69,10 @@ class TheSportsDBClient(APIClient):
         sport: str = "Soccer",
     ) -> Dict[str, Any]:
         """Get live events from TheSportsDB.
+        
+        Note: TheSportsDB v1 API doesn't have a livescore endpoint.
+        This method uses eventsday.php with today's date as a workaround.
+        For true live scores, v2 API is required (premium only).
 
         Args:
             sport: Sport name (default: Soccer)
@@ -76,13 +80,27 @@ class TheSportsDBClient(APIClient):
         Returns:
             API response dictionary
         """
+        from datetime import datetime
+        
+        # TheSportsDB v1 doesn't have livescore.php - use eventsday.php with today's date
+        # This will return today's events, which may include live ones
+        date = datetime.utcnow().strftime("%Y-%m-%d")
         params = {
+            "d": date,
             "s": sport,
         }
 
         try:
-            api_key = self.api_key or "1"  # Default to "1" for free tier
-            response = await self.get(f"/{api_key}/livescore.php", params=params)
+            api_key = self.api_key or "123"  # Free tier API key is "123"
+            response = await self.get(f"/{api_key}/eventsday.php", params=params)
+            # Filter for live events if possible (events with status "Live")
+            if response.get("events"):
+                live_events = [
+                    event for event in response["events"]
+                    if event.get("strStatus") == "Live"
+                ]
+                if live_events:
+                    response["events"] = live_events
             return response
         except APIError as e:
             # Log as warning since TheSportsDB is a fallback service
