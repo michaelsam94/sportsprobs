@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter
 
-from app.api.v1.endpoints import players, teams, matches, proxy, cache, probability_config, security, protected_example, observability, sofascore
+from app.api.v1.endpoints import players, teams, matches, proxy, cache, probability_config, security, protected_example, observability, sofascore, sportsmonks
 
 api_router = APIRouter()
 
@@ -17,4 +17,5 @@ api_router.include_router(security.router, prefix="/admin", tags=["admin"])
 api_router.include_router(protected_example.router, prefix="/example", tags=["example"])
 api_router.include_router(observability.router, prefix="/observability", tags=["observability"])
 api_router.include_router(sofascore.router, prefix="/sofascore", tags=["sofascore", "scraping"])
+api_router.include_router(sportsmonks.router, prefix="/sportsmonks", tags=["sportsmonks", "external-api"])
 
