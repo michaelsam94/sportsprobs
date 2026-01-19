@@ -65,7 +65,7 @@ class Settings(BaseSettings):
     # Gemini AI
     # Get your API key from Google AI Studio: https://aistudio.google.com/app/apikey
     # Set it via environment variable GEMINI_API_KEY or update the default below
-    GEMINI_API_KEY: str = Field(default="AIzaSyCFhYRQH2NKIYfRthkHAnM0_dYlnVf0WJg", description="Google Gemini API key for sports analysis")
+    GEMINI_API_KEY: str = Field(default="AIzaSyBtnuRckVmS4nEjl6fKA8vWjKQE8PEzuSM", description="Google Gemini API key for sports analysis")
     GEMINI_MODEL: str = Field(default="gemini-3-flash-preview", description="Gemini model name (gemini-3-flash-preview, gemini-1.5-flash, gemini-1.5-pro)")
     GEMINI_CACHE_TTL: int = Field(default=3600, description="Gemini analysis cache TTL in seconds (default: 1 hour)")
 
