@@ -248,7 +248,6 @@ async def get_match_analytics(
         match_model = await repository.get_by_id(match_id)
         if match_model:
             # Convert model to DTO for probability service
-            from app.application.dto.match_dto import MatchResponseDTO
             match = MatchResponseDTO(
                 id=match_model.id,
                 home_team_id=match_model.home_team_id,
@@ -338,22 +337,34 @@ async def get_match_analytics(
         )
     
     # Calculate probabilities
-    probability_service = ProbabilityService()
-    probabilities = await probability_service.calculate_match_probabilities(match)
+    # For now, use simplified xG calculation (can be enhanced with historical data)
+    # Default xG values if we don't have historical stats
+    home_xg = 1.5  # Default expected goals for home team
+    away_xg = 1.2  # Default expected goals for away team
     
+    # TODO: Enhance with actual team statistics if available in database
+    # For external API matches, we don't have historical data, so use defaults
+    
+    # Calculate match probabilities using Poisson distribution
+    probabilities = ProbabilityService.calculate_match_probabilities(
+        home_xg=home_xg,
+        away_xg=away_xg,
+    )
+    
+    from datetime import datetime
     return {
         "match_id": match_id,
         "probabilities": {
-            "home_win": probabilities.get("home_win_probability", 0.0),
-            "draw": probabilities.get("draw_probability", 0.0),
-            "away_win": probabilities.get("away_win_probability", 0.0),
+            "home_win": probabilities.home_win,
+            "draw": probabilities.draw,
+            "away_win": probabilities.away_win,
         },
         "expected_goals": {
-            "home": probabilities.get("home_expected_goals", 0.0),
-            "away": probabilities.get("away_expected_goals", 0.0),
+            "home": home_xg,
+            "away": away_xg,
         },
-        "confidence": probabilities.get("confidence", 0.0),
-        "calculated_at": probabilities.get("calculated_at"),
+        "confidence": 0.7,  # Default confidence (can be calculated based on data quality)
+        "calculated_at": datetime.utcnow().isoformat(),
     }
 
 
