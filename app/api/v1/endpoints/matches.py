@@ -235,14 +235,103 @@ async def get_match_analytics(
     match_id: int,
     db: AsyncSession = Depends(get_db),
 ):
-    """Get match analytics and probabilities."""
+    """Get match analytics and probabilities. Checks database, cache, and external APIs."""
+    from fastapi import HTTPException, status
     from app.application.services.probability_service import ProbabilityService
+    from app.infrastructure.cache.cache_service import cache_service
     
+    match = None
+    
+    # First, try database
     repository = get_match_repository(db)
-    match = await repository.get_by_id(match_id)
+    try:
+        match_model = await repository.get_by_id(match_id)
+        if match_model:
+            # Convert model to DTO for probability service
+            from app.application.dto.match_dto import MatchResponseDTO
+            match = MatchResponseDTO(
+                id=match_model.id,
+                home_team_id=match_model.home_team_id,
+                away_team_id=match_model.away_team_id,
+                sport=match_model.sport,
+                league=match_model.league,
+                match_date=match_model.match_date,
+                status=match_model.status,
+                home_score=match_model.home_score,
+                away_score=match_model.away_score,
+                venue=match_model.venue,
+                attendance=match_model.attendance,
+                created_at=match_model.created_at,
+                updated_at=match_model.updated_at,
+            )
+    except Exception as e:
+        logger.debug(f"Match {match_id} not in database: {e}")
+    
+    # If not in database, check cache
+    if not match:
+        try:
+            # Check live events cache - try different cache key variations
+            cache_params_variations = [
+                {"endpoint": "live_events", "league_id": None},
+                {"endpoint": "live_events"},
+            ]
+            for params in cache_params_variations:
+                cached_live = await cache_service.get("live_events", params)
+                if cached_live:
+                    # Cache stores list of match dicts directly
+                    match_list = cached_live if isinstance(cached_live, list) else []
+                    for match_data in match_list:
+                        if isinstance(match_data, dict) and match_data.get("id") == match_id:
+                            match = MatchResponseDTO(**match_data)
+                            break
+                if match:
+                    break
+            
+            # Check upcoming events cache - try different cache key variations
+            if not match:
+                cache_params_variations = [
+                    {"endpoint": "upcoming_events", "league_id": None, "date": None, "limit": 50},
+                    {"endpoint": "upcoming_events", "league_id": None, "limit": 50},
+                    {"endpoint": "upcoming_events"},
+                ]
+                for params in cache_params_variations:
+                    cached_upcoming = await cache_service.get("upcoming_events", params)
+                    if cached_upcoming:
+                        # Cache stores list of match dicts directly
+                        match_list = cached_upcoming if isinstance(cached_upcoming, list) else []
+                        for match_data in match_list:
+                            if isinstance(match_data, dict) and match_data.get("id") == match_id:
+                                match = MatchResponseDTO(**match_data)
+                                break
+                    if match:
+                        break
+        except Exception as e:
+            logger.warning(f"Error checking cache for match {match_id}: {e}")
+    
+    # If still not found, try fetching from external APIs
+    if not match:
+        try:
+            from app.application.services.events_service import EventsService
+            events_service = EventsService()
+            
+            # Try live events
+            live_matches = await events_service.get_live_events(use_cache=True, cache_ttl=30)
+            for m in live_matches:
+                if m.id == match_id:
+                    match = m
+                    break
+            
+            # Try upcoming events
+            if not match:
+                upcoming_matches = await events_service.get_upcoming_events(limit=100, use_cache=True, cache_ttl=3600)
+                for m in upcoming_matches:
+                    if m.id == match_id:
+                        match = m
+                        break
+        except Exception as e:
+            logger.warning(f"Error fetching match {match_id} from external APIs: {e}")
     
     if not match:
-        from fastapi import HTTPException, status
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Match with ID {match_id} not found"
@@ -275,10 +364,77 @@ async def get_match(
     match_id: int,
     db: AsyncSession = Depends(get_db),
 ):
-    """Get match by ID."""
+    """Get match by ID. Checks database first, then cache, then external APIs."""
+    from fastapi import HTTPException, status
+    from app.infrastructure.cache.cache_service import cache_service
+    
+    # First, try database
     repository = get_match_repository(db)
     service = MatchService(repository)
-    return await service.get_match_by_id(match_id)
+    try:
+        match = await service.get_match_by_id(match_id)
+        if match:
+            return match
+    except HTTPException:
+        pass  # Continue to check cache/external APIs
+    
+    # If not in database, check cache (live/upcoming matches)
+    try:
+        # Check live events cache - try different cache key variations
+        cache_params_variations = [
+            {"endpoint": "live_events", "league_id": None},
+            {"endpoint": "live_events"},
+        ]
+        for params in cache_params_variations:
+            cached_live = await cache_service.get("live_events", params)
+            if cached_live:
+                # Cache stores list of match dicts directly
+                match_list = cached_live if isinstance(cached_live, list) else []
+                for match_data in match_list:
+                    if isinstance(match_data, dict) and match_data.get("id") == match_id:
+                        return MatchResponseDTO(**match_data)
+        
+        # Check upcoming events cache - try different cache key variations
+        cache_params_variations = [
+            {"endpoint": "upcoming_events", "league_id": None, "date": None, "limit": 50},
+            {"endpoint": "upcoming_events", "league_id": None, "limit": 50},
+            {"endpoint": "upcoming_events"},
+        ]
+        for params in cache_params_variations:
+            cached_upcoming = await cache_service.get("upcoming_events", params)
+            if cached_upcoming:
+                # Cache stores list of match dicts directly
+                match_list = cached_upcoming if isinstance(cached_upcoming, list) else []
+                for match_data in match_list:
+                    if isinstance(match_data, dict) and match_data.get("id") == match_id:
+                        return MatchResponseDTO(**match_data)
+    except Exception as e:
+        logger.warning(f"Error checking cache for match {match_id}: {e}")
+    
+    # If still not found, try fetching from external APIs
+    try:
+        from app.application.services.events_service import EventsService
+        events_service = EventsService()
+        
+        # Try live events
+        live_matches = await events_service.get_live_events(use_cache=True, cache_ttl=30)
+        for match in live_matches:
+            if match.id == match_id:
+                return match
+        
+        # Try upcoming events
+        upcoming_matches = await events_service.get_upcoming_events(limit=100, use_cache=True, cache_ttl=3600)
+        for match in upcoming_matches:
+            if match.id == match_id:
+                return match
+    except Exception as e:
+        logger.warning(f"Error fetching match {match_id} from external APIs: {e}")
+    
+    # Not found anywhere
+    raise HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail=f"Match not found with id: {match_id}"
+    )
 
 
 @router.put("/{match_id}", response_model=MatchResponseDTO)
