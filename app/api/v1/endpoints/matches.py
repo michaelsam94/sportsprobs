@@ -131,8 +131,9 @@ async def get_upcoming_matches(
     from datetime import datetime, timedelta, timezone
     from calendar import monthrange
     
-    # Use timezone-aware datetime to avoid comparison issues
-    now = datetime.now(timezone.utc)
+    # Use UTC+2 (Cairo timezone) for date calculations
+    cairo_tz = timezone(timedelta(hours=2))
+    now = datetime.now(cairo_tz)
     start_date = now
     end_date = None
     date_filter = date  # Use provided date if available (legacy support)
@@ -178,23 +179,23 @@ async def get_upcoming_matches(
     # Only use filter_type if explicit timestamps were NOT provided
     if not from_timestamp and not to_timestamp and filter_type:
         if filter_type == "today":
-            # Today only
+            # Today only (in Cairo timezone)
             start_date = now.replace(hour=0, minute=0, second=0, microsecond=0)
             end_date = start_date + timedelta(days=1)
             # If no explicit date provided, use today's date for API call
             if not date_filter:
                 date_filter = start_date.strftime("%Y-%m-%d")
         elif filter_type == "this_week":
-            # This week (today to 7 days from now)
+            # This week (today to 7 days from now) in Cairo timezone
             start_date = now.replace(hour=0, minute=0, second=0, microsecond=0)
             end_date = start_date + timedelta(days=7)
             # Don't pass date filter to API, we'll get a range and filter
             date_filter = None
         elif filter_type == "this_month":
-            # This month (today to end of month)
+            # This month (today to end of month) in Cairo timezone
             start_date = now.replace(hour=0, minute=0, second=0, microsecond=0)
             last_day = monthrange(now.year, now.month)[1]
-            end_date = datetime(now.year, now.month, last_day, 23, 59, 59, tzinfo=timezone.utc)
+            end_date = datetime(now.year, now.month, last_day, 23, 59, 59, tzinfo=cairo_tz)
             # Don't pass date filter to API, we'll get a range and filter
             date_filter = None
     
@@ -250,10 +251,14 @@ async def get_upcoming_matches(
                     # Convert to UTC if different timezone
                     match_date = match_date.astimezone(timezone.utc)
                 
+                # Convert start_date and end_date to UTC for comparison (match_date is in UTC)
+                start_date_utc = start_date.astimezone(timezone.utc) if start_date.tzinfo else start_date.replace(tzinfo=timezone.utc)
+                end_date_utc = end_date.astimezone(timezone.utc) if end_date and end_date.tzinfo else (end_date.replace(tzinfo=timezone.utc) if end_date else None)
+                
                 # Check if match is within the date range
-                is_in_range = match_date >= start_date
-                if end_date:
-                    is_in_range = is_in_range and match_date <= end_date
+                is_in_range = match_date >= start_date_utc
+                if end_date_utc:
+                    is_in_range = is_in_range and match_date <= end_date_utc
                 
                 if is_in_range:
                     # Only include scheduled/not started matches
@@ -415,6 +420,10 @@ async def get_match_analytics(
     from fastapi import HTTPException, status
     from app.application.services.probability_service import ProbabilityService
     from app.infrastructure.cache.cache_service import cache_service
+    from datetime import timezone, timedelta
+    
+    # Use UTC+2 (Cairo timezone) for date calculations
+    cairo_tz = timezone(timedelta(hours=2))
     
     match = None
     
@@ -600,7 +609,9 @@ async def get_match_analytics(
     # Helper function to get league-based averages when team-specific data is not available
     async def get_league_based_stats(league_id: int = None, league_name: Optional[str] = None) -> dict:
         """Get league-wide statistics as fallback."""
-        cutoff_date = datetime.utcnow() - timedelta(days=90)
+        # Use UTC+2 (Cairo timezone) for date calculations
+        cairo_tz = timezone(timedelta(hours=2))
+        cutoff_date = datetime.now(cairo_tz) - timedelta(days=90)
         
         query = select(MatchModel).where(
             and_(
@@ -701,7 +712,9 @@ async def get_match_analytics(
             }
         
         # Get finished matches for this team (last 20 matches or last 3 months)
-        cutoff_date = datetime.utcnow() - timedelta(days=90)
+        # Use UTC+2 (Cairo timezone) for date calculations
+        cairo_tz = timezone(timedelta(hours=2))
+        cutoff_date = datetime.now(cairo_tz) - timedelta(days=90)
         
         query = select(MatchModel).where(
             and_(
@@ -764,7 +777,9 @@ async def get_match_analytics(
     # Calculate league average goals
     async def calculate_league_avg_goals(league_id: int = None) -> float:
         """Calculate league average goals per match."""
-        cutoff_date = datetime.utcnow() - timedelta(days=90)
+        # Use UTC+2 (Cairo timezone) for date calculations
+        cairo_tz = timezone(timedelta(hours=2))
+        cutoff_date = datetime.now(cairo_tz) - timedelta(days=90)
         
         query = select(MatchModel).where(
             and_(
@@ -821,7 +836,9 @@ async def get_match_analytics(
     
     if home_db_team_id:
         # Quick check: count finished matches for home team
-        cutoff_date = datetime.utcnow() - timedelta(days=90)
+        # Use UTC+2 (Cairo timezone) for date calculations
+        cairo_tz = timezone(timedelta(hours=2))
+        cutoff_date = datetime.now(cairo_tz) - timedelta(days=90)
         home_matches_query = select(MatchModel).where(
             and_(
                 MatchModel.status == "finished",
@@ -837,7 +854,9 @@ async def get_match_analytics(
     
     if away_db_team_id:
         # Quick check: count finished matches for away team
-        cutoff_date = datetime.utcnow() - timedelta(days=90)
+        # Use UTC+2 (Cairo timezone) for date calculations
+        cairo_tz = timezone(timedelta(hours=2))
+        cutoff_date = datetime.now(cairo_tz) - timedelta(days=90)
         away_matches_query = select(MatchModel).where(
             and_(
                 MatchModel.status == "finished",
@@ -952,7 +971,7 @@ async def get_match_analytics(
             "away_team_matches": away_stats["matches_count"],
             "league_avg_goals": league_avg,
         },
-        "calculated_at": datetime.utcnow().isoformat(),
+        "calculated_at": datetime.now(cairo_tz).isoformat(),
     }
 
 
