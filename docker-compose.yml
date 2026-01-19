@@ -16,6 +16,7 @@ services:
       - DEBUG=False
       - RATE_LIMIT_ENABLED=True
       - CACHE_ENABLED=True
+      - ADMIN_TOKEN=dx0d3ukqoM0LlUuxaAVsz2DSYv70bhAwuy048P9WCmbpOcEgrHblie14j8K1gwKl
     env_file:
       - .env.production
     volumes:
@@ -35,7 +36,7 @@ services:
       timeout: 10s
       retries: 5
       start_period: 10s
-      
+
   # PostgreSQL Database
   postgres:
     image: postgres:15-alpine
