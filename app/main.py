@@ -44,10 +44,10 @@ def create_application() -> FastAPI:
     # Production optimizations
     if settings.ENVIRONMENT == "production":
         app_config.update({
-            "docs_url": None,  # Disable docs in production
-            "redoc_url": None,  # Disable redoc in production
-            "openapi_url": None,  # Disable OpenAPI schema in production
-        })
+        "docs_url": "/docs",
+        "redoc_url": "/redoc",
+        "openapi_url": "/openapi.json",
+    })
     
     app = FastAPI(**app_config)
 
