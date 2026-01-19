@@ -336,14 +336,141 @@ async def get_match_analytics(
             detail=f"Match with ID {match_id} not found"
         )
     
-    # Calculate probabilities
-    # For now, use simplified xG calculation (can be enhanced with historical data)
-    # Default xG values if we don't have historical stats
-    home_xg = 1.5  # Default expected goals for home team
-    away_xg = 1.2  # Default expected goals for away team
+    # Calculate probabilities using historical data
+    from datetime import datetime, timedelta
+    from sqlalchemy import func, and_, or_
+    from app.infrastructure.database.models.match_model import MatchModel
     
-    # TODO: Enhance with actual team statistics if available in database
-    # For external API matches, we don't have historical data, so use defaults
+    # Helper function to calculate team statistics from historical matches
+    async def calculate_team_stats(team_id: int, is_home: bool, league_id: int = None) -> dict:
+        """Calculate team statistics from historical finished matches."""
+        # Get finished matches for this team (last 20 matches or last 3 months)
+        cutoff_date = datetime.utcnow() - timedelta(days=90)
+        
+        query = select(MatchModel).where(
+            and_(
+                MatchModel.status == "finished",
+                MatchModel.match_date >= cutoff_date,
+                or_(
+                    MatchModel.home_team_id == team_id,
+                    MatchModel.away_team_id == team_id,
+                )
+            )
+        )
+        
+        if league_id:
+            query = query.where(MatchModel.league_id == league_id)
+        
+        query = query.order_by(MatchModel.match_date.desc()).limit(20)
+        
+        result = await db.execute(query)
+        matches = result.scalars().all()
+        
+        if not matches or len(matches) < 3:
+            # Not enough historical data
+            return {
+                "goals_for_avg": 1.5 if is_home else 1.2,
+                "goals_against_avg": 1.2 if is_home else 1.5,
+                "matches_count": 0,
+            }
+        
+        # Calculate averages
+        total_goals_for = 0
+        total_goals_against = 0
+        matches_count = len(matches)
+        
+        for match in matches:
+            if match.home_team_id == team_id:
+                # Team was home
+                if match.home_score is not None:
+                    total_goals_for += match.home_score
+                if match.away_score is not None:
+                    total_goals_against += match.away_score
+            else:
+                # Team was away
+                if match.away_score is not None:
+                    total_goals_for += match.away_score
+                if match.home_score is not None:
+                    total_goals_against += match.home_score
+        
+        goals_for_avg = total_goals_for / matches_count if matches_count > 0 else 1.5
+        goals_against_avg = total_goals_against / matches_count if matches_count > 0 else 1.2
+        
+        return {
+            "goals_for_avg": goals_for_avg,
+            "goals_against_avg": goals_against_avg,
+            "matches_count": matches_count,
+        }
+    
+    # Calculate league average goals
+    async def calculate_league_avg_goals(league_id: int = None) -> float:
+        """Calculate league average goals per match."""
+        cutoff_date = datetime.utcnow() - timedelta(days=90)
+        
+        query = select(MatchModel).where(
+            and_(
+                MatchModel.status == "finished",
+                MatchModel.match_date >= cutoff_date,
+                MatchModel.home_score.isnot(None),
+                MatchModel.away_score.isnot(None),
+            )
+        )
+        
+        if league_id:
+            query = query.where(MatchModel.league_id == league_id)
+        
+        query = query.limit(100)  # Sample last 100 matches
+        
+        result = await db.execute(query)
+        matches = result.scalars().all()
+        
+        if not matches or len(matches) < 10:
+            return 2.5  # Default league average
+        
+        total_goals = sum(
+            (match.home_score or 0) + (match.away_score or 0)
+            for match in matches
+        )
+        
+        return total_goals / (len(matches) * 2)  # Average per team, then per match
+    
+    # Get team statistics
+    home_team_id = match.home_team_id
+    away_team_id = match.away_team_id
+    
+    # Try to get league_id from database match if available
+    league_id = None
+    try:
+        match_model = await repository.get_by_id(match_id)
+        if match_model and hasattr(match_model, 'league_id'):
+            league_id = match_model.league_id
+    except:
+        pass  # If match not in database, league_id will be None
+    
+    home_stats = await calculate_team_stats(home_team_id, is_home=True, league_id=league_id)
+    away_stats = await calculate_team_stats(away_team_id, is_home=False, league_id=league_id)
+    league_avg = await calculate_league_avg_goals(league_id=league_id)
+    
+    # Calculate expected goals using the probability service
+    home_xg = ProbabilityService.calculate_expected_goals(
+        team_goals_for_avg=home_stats["goals_for_avg"],
+        team_goals_against_avg=home_stats["goals_against_avg"],
+        opponent_goals_for_avg=away_stats["goals_for_avg"],
+        opponent_goals_against_avg=away_stats["goals_against_avg"],
+        league_avg_goals=league_avg,
+        home_advantage=0.3,
+        is_home=True,
+    )
+    
+    away_xg = ProbabilityService.calculate_expected_goals(
+        team_goals_for_avg=away_stats["goals_for_avg"],
+        team_goals_against_avg=away_stats["goals_against_avg"],
+        opponent_goals_for_avg=home_stats["goals_for_avg"],
+        opponent_goals_against_avg=home_stats["goals_against_avg"],
+        league_avg_goals=league_avg,
+        home_advantage=0.3,
+        is_home=False,
+    )
     
     # Calculate match probabilities using Poisson distribution
     probabilities = ProbabilityService.calculate_match_probabilities(
@@ -351,7 +478,17 @@ async def get_match_analytics(
         away_xg=away_xg,
     )
     
-    from datetime import datetime
+    # Calculate confidence based on data quality
+    min_matches = min(home_stats["matches_count"], away_stats["matches_count"])
+    if min_matches >= 10:
+        confidence = 0.9
+    elif min_matches >= 5:
+        confidence = 0.7
+    elif min_matches >= 3:
+        confidence = 0.5
+    else:
+        confidence = 0.3  # Low confidence for limited data
+    
     return {
         "match_id": match_id,
         "probabilities": {
@@ -363,7 +500,12 @@ async def get_match_analytics(
             "home": home_xg,
             "away": away_xg,
         },
-        "confidence": 0.7,  # Default confidence (can be calculated based on data quality)
+        "confidence": confidence,
+        "data_quality": {
+            "home_team_matches": home_stats["matches_count"],
+            "away_team_matches": away_stats["matches_count"],
+            "league_avg_goals": league_avg,
+        },
         "calculated_at": datetime.utcnow().isoformat(),
     }
 
