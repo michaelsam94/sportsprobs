@@ -70,15 +70,9 @@ class EventsService:
                 response = await self.thesportsdb.get_live_events(date=date)
                 if response.get("events"):
                     all_events = self._normalize_thesportsdb_events(response["events"])
-                    # Filter to include LIVE matches and matches scheduled for today (not finished)
-                    # Include: LIVE, NS (Not Started), and scheduled matches
-                    # Exclude: FT (Finished), POSTPONED, CANCELLED
-                    events = [
-                        e for e in all_events 
-                        if e.status in ["LIVE", "NS", "scheduled"] 
-                        and e.status not in ["FT", "POSTPONED", "CANCELLED"]
-                    ]
-                    logger.info(f"Fetched {len(events)} live/upcoming events from TheSportsDB (filtered from {len(all_events)} total events)")
+                    # Filter to only include LIVE matches (exclude finished, scheduled, not started, etc.)
+                    events = [e for e in all_events if e.status == "LIVE"]
+                    logger.info(f"Fetched {len(events)} live events from TheSportsDB (filtered from {len(all_events)} total events)")
             except APIError as e:
                 logger.warning(f"TheSportsDB failed: {e}")
 
