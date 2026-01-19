@@ -71,7 +71,8 @@ class TheSportsDBClient(APIClient):
         """Get live events from TheSportsDB.
         
         Note: TheSportsDB v1 API doesn't have a livescore endpoint.
-        This method uses eventsday.php without a date filter to get all events.
+        This method uses eventsday.php with today's date (required by API).
+        The date is only used for the API call format, not for filtering results.
         For true live scores, v2 API is required (premium only).
 
         Args:
@@ -80,8 +81,13 @@ class TheSportsDBClient(APIClient):
         Returns:
             API response dictionary
         """
-        # Don't send date filter - just get events by sport
+        from datetime import datetime
+        
+        # TheSportsDB API requires a date parameter, but we filter by status, not date
+        # Use today's date as required by the API endpoint
+        date = datetime.utcnow().strftime("%Y-%m-%d")
         params = {
+            "d": date,
             "s": sport,
         }
 
@@ -89,6 +95,7 @@ class TheSportsDBClient(APIClient):
             api_key = self.api_key or "123"  # Free tier API key is "123"
             response = await self.get(f"/{api_key}/eventsday.php", params=params)
             # Filter for live events - status can be "Live", "1H", "2H", "HT" (first half, second half, half time)
+            # Note: We filter by status, not by date - the date param is just for API format
             if response.get("events"):
                 live_statuses = ["Live", "1H", "2H", "HT"]  # These indicate a match is currently live
                 live_events = [
