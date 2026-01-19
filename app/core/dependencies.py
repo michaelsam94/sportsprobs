@@ -1,8 +1,8 @@
 """FastAPI dependencies for dependency injection."""
 
-from typing import AsyncGenerator
+from typing import AsyncGenerator, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
-from fastapi import Request, HTTPException, status
+from fastapi import Request, HTTPException, status, Depends
 
 from app.infrastructure.database.session import get_db_session
 from app.infrastructure.repositories.player_repository import PlayerRepository
@@ -70,11 +70,9 @@ def get_sports_data_client() -> SportsDataClient:
 
 
 def get_proxy_service(
-    api_client: SportsDataClient = None,
+    api_client: Optional[SportsDataClient] = Depends(get_sports_data_client),
 ) -> ProxyService:
     """Dependency for proxy service."""
-    if api_client is None:
-        api_client = get_sports_data_client()
     return ProxyService(api_client=api_client)
 
 

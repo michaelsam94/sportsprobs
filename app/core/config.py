@@ -46,7 +46,12 @@ class Settings(BaseSettings):
 
     # CORS
     CORS_ORIGINS: List[str] = Field(
-        default=["http://localhost:3000", "http://localhost:8080"]
+        default=[
+            "http://localhost:3000",
+            "http://localhost:8080",
+            "http://10.0.2.2:8000",  # Android emulator
+            "*",  # Allow all origins in development (restrict in production)
+        ]
     )
 
     # External Services

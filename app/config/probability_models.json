@@ -1,0 +1,44 @@
+{
+  "metadata": {
+    "last_updated": "2026-01-18T23:38:50.935364",
+    "total_configurations": 1
+  },
+  "configurations": {
+    "1.0.0": {
+      "version": "1.0.0",
+      "model_weights": {
+        "home_advantage": 0.3,
+        "form_weight": 0.2,
+        "head_to_head_weight": 0.1,
+        "league_position_weight": 0.1,
+        "goals_for_weight": 0.3,
+        "goals_against_weight": 0.3
+      },
+      "thresholds": {
+        "min_goals_for_avg": 0.0,
+        "max_goals_for_avg": 10.0,
+        "min_goals_against_avg": 0.0,
+        "max_goals_against_avg": 10.0,
+        "min_league_avg_goals": 0.5,
+        "max_league_avg_goals": 5.0,
+        "min_home_advantage": 0.0,
+        "max_home_advantage": 1.0,
+        "probability_confidence_threshold": 0.6
+      },
+      "feature_flags": {
+        "enable_form_factor": false,
+        "enable_head_to_head": false,
+        "enable_league_position": false,
+        "enable_weather_adjustment": false,
+        "enable_injury_adjustment": false,
+        "enable_motivation_factor": false,
+        "use_weighted_averages": false,
+        "enable_advanced_xg": false
+      },
+      "description": "Default probability model configuration",
+      "is_active": true,
+      "created_at": "2026-01-18T23:38:50.935364",
+      "updated_at": "2026-01-18T23:38:50.935364"
+    }
+  }
+}

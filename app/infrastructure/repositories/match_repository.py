@@ -117,3 +117,14 @@ class MatchRepository(BaseRepository[Match, MatchModel], IMatchRepository):
         models = result.scalars().all()
         return [self._model_to_entity(model) for model in models]
 
+    async def get_finished(self, limit: int = 10) -> List[Match]:
+        """Get finished matches."""
+        result = await self.session.execute(
+            select(self.model)
+            .where(self.model.status == "finished")
+            .order_by(self.model.match_date.desc())
+            .limit(limit)
+        )
+        models = result.scalars().all()
+        return [self._model_to_entity(model) for model in models]
+

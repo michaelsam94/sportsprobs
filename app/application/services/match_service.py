@@ -118,6 +118,11 @@ class MatchService:
         matches = await self.repository.get_live()
         return [self._entity_to_dto(match) for match in matches]
 
+    async def get_finished_matches(self, limit: int = 10) -> List[MatchResponseDTO]:
+        """Get finished matches."""
+        matches = await self.repository.get_finished(limit=limit)
+        return [self._entity_to_dto(match) for match in matches]
+
     def _entity_to_dto(self, match: Match) -> MatchResponseDTO:
         """Convert entity to DTO."""
         return MatchResponseDTO(

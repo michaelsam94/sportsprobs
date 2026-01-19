@@ -38,3 +38,8 @@ class IMatchRepository(IBaseRepository[Match]):
         """Get currently live matches."""
         pass
 
+    @abstractmethod
+    async def get_finished(self, limit: int = 10) -> List[Match]:
+        """Get finished matches."""
+        pass
+
