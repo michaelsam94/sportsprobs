@@ -41,6 +41,7 @@ class SecurityMiddleware(BaseHTTPMiddleware):
             "/api/docs",
             "/api/redoc",
             "/api/openapi.json",
+            "/api/v1/admin",  # Admin endpoints use admin token, not API key
         ]
 
     async def dispatch(self, request: Request, call_next: Callable):
@@ -53,6 +54,10 @@ class SecurityMiddleware(BaseHTTPMiddleware):
         for prefix in self.excluded_path_prefixes:
             if request.url.path.startswith(prefix):
                 return await call_next(request)
+        
+        # Also check for admin endpoints (they use admin token, not API key)
+        if "/admin" in request.url.path:
+            return await call_next(request)
 
         # Get client IP
         client_ip = self._get_client_ip(request)
