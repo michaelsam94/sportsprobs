@@ -212,10 +212,10 @@ async def get_upcoming_matches(
         # If explicit from/to provided, check if range is one day or less
         days_diff = (end_date - start_date).total_seconds() / 86400  # Convert to days
         if days_diff <= 1:
-            # For single-day ranges, don't use date filter - get all events and filter by timestamp range
-            # This ensures we get matches for the correct day regardless of timezone
-            api_date_filter = None
-            logger.info(f"Single-day range detected, fetching events and filtering by timestamp range: {start_date.isoformat()} to {end_date.isoformat()}")
+            # For single-day ranges, extract the date from start_date to pass to API
+            # This ensures TheSportsDB gets the correct date for fetching matches
+            api_date_filter = start_date.strftime("%Y-%m-%d")
+            logger.info(f"Single-day range detected, using date filter: {api_date_filter} (range: {start_date.isoformat()} to {end_date.isoformat()})")
         else:
             # For multi-day ranges, don't pass date filter - get all and filter
             api_date_filter = None
