@@ -636,12 +636,52 @@ async def get_match_analytics(
     # Get league name from match if available
     league_name = getattr(match, 'league', None)
     
-    # Try to find teams and scrape historical data if not found
+    # Try to find teams and check if they have historical matches
     home_db_team_id = await find_team_in_db(home_team_id, home_team_name)
     away_db_team_id = await find_team_in_db(away_team_id, away_team_name)
     
-    # If teams not found and we have team names, try to scrape from SofaScore (async, don't wait)
-    if (not home_db_team_id or not away_db_team_id) and (home_team_name or away_team_name):
+    # Check if teams have historical matches
+    home_has_history = False
+    away_has_history = False
+    
+    if home_db_team_id:
+        # Quick check: count finished matches for home team
+        cutoff_date = datetime.utcnow() - timedelta(days=90)
+        home_matches_query = select(MatchModel).where(
+            and_(
+                MatchModel.status == "finished",
+                MatchModel.match_date >= cutoff_date,
+                or_(
+                    MatchModel.home_team_id == home_db_team_id,
+                    MatchModel.away_team_id == home_db_team_id,
+                )
+            )
+        ).limit(1)
+        home_result = await db.execute(home_matches_query)
+        home_has_history = home_result.scalar_one_or_none() is not None
+    
+    if away_db_team_id:
+        # Quick check: count finished matches for away team
+        cutoff_date = datetime.utcnow() - timedelta(days=90)
+        away_matches_query = select(MatchModel).where(
+            and_(
+                MatchModel.status == "finished",
+                MatchModel.match_date >= cutoff_date,
+                or_(
+                    MatchModel.home_team_id == away_db_team_id,
+                    MatchModel.away_team_id == away_db_team_id,
+                )
+            )
+        ).limit(1)
+        away_result = await db.execute(away_matches_query)
+        away_has_history = away_result.scalar_one_or_none() is not None
+    
+    # If teams not found OR have no historical data, try to scrape from SofaScore
+    should_scrape_home = (not home_db_team_id or not home_has_history) and home_team_name
+    should_scrape_away = (not away_db_team_id or not away_has_history) and away_team_name
+    
+    if should_scrape_home or should_scrape_away:
+        logger.info(f"Attempting SofaScore scrape - Home: {should_scrape_home} (team_id={home_db_team_id}, name='{home_team_name}'), Away: {should_scrape_away} (team_id={away_db_team_id}, name='{away_team_name}')")
         try:
             from app.application.services.sofascore_service import SofaScoreService
             from app.infrastructure.repositories.team_repository import TeamRepository
@@ -649,28 +689,34 @@ async def get_match_analytics(
             team_repo = TeamRepository(db)
             sofascore_service = SofaScoreService(repository, team_repo)
             
-            # Scrape historical data for teams that weren't found (fire and forget)
-            if not home_db_team_id and home_team_name:
-                logger.info(f"Team '{home_team_name}' not found, attempting to scrape from SofaScore...")
-                # Note: This is async but we don't await it to avoid blocking the analytics response
-                # In production, you might want to use a background task queue
+            # Scrape historical data for teams that need it
+            if should_scrape_home:
+                logger.info(f"Scraping SofaScore data for home team: '{home_team_name}'")
                 try:
-                    await sofascore_service.scrape_team_historical_data(home_team_name, limit=20)
+                    scraped_matches = await sofascore_service.scrape_team_historical_data(home_team_name, limit=20)
+                    logger.info(f"Scraped {len(scraped_matches)} matches for home team '{home_team_name}'")
                     # Re-check after scraping
                     home_db_team_id = await find_team_in_db(home_team_id, home_team_name)
+                    if home_db_team_id:
+                        logger.info(f"Home team '{home_team_name}' found in database after scraping: ID {home_db_team_id}")
                 except Exception as e:
-                    logger.warning(f"Failed to scrape data for team '{home_team_name}': {e}")
+                    logger.error(f"Failed to scrape data for home team '{home_team_name}': {e}", exc_info=True)
             
-            if not away_db_team_id and away_team_name:
-                logger.info(f"Team '{away_team_name}' not found, attempting to scrape from SofaScore...")
+            if should_scrape_away:
+                logger.info(f"Scraping SofaScore data for away team: '{away_team_name}'")
                 try:
-                    await sofascore_service.scrape_team_historical_data(away_team_name, limit=20)
+                    scraped_matches = await sofascore_service.scrape_team_historical_data(away_team_name, limit=20)
+                    logger.info(f"Scraped {len(scraped_matches)} matches for away team '{away_team_name}'")
                     # Re-check after scraping
                     away_db_team_id = await find_team_in_db(away_team_id, away_team_name)
+                    if away_db_team_id:
+                        logger.info(f"Away team '{away_team_name}' found in database after scraping: ID {away_db_team_id}")
                 except Exception as e:
-                    logger.warning(f"Failed to scrape data for team '{away_team_name}': {e}")
+                    logger.error(f"Failed to scrape data for away team '{away_team_name}': {e}", exc_info=True)
         except Exception as e:
-            logger.warning(f"Error attempting SofaScore scrape: {e}")
+            logger.error(f"Error attempting SofaScore scrape: {e}", exc_info=True)
+    else:
+        logger.debug(f"Skipping SofaScore scrape - Home: has_team={bool(home_db_team_id)}, has_history={home_has_history}; Away: has_team={bool(away_db_team_id)}, has_history={away_has_history}")
     
     home_stats = await calculate_team_stats(home_team_id, home_team_name, is_home=True, league_id=league_id, league_name=league_name)
     away_stats = await calculate_team_stats(away_team_id, away_team_name, is_home=False, league_id=league_id, league_name=league_name)
