@@ -37,6 +37,12 @@ ENV/
 .env
 .env.local
 .env.*.local
+.env.production
+.env.development
+# Note: .env.example should be tracked (not ignored)
+# Ignore all other .env.* files except .env.example
+.env.*
+!.env.example
 
 # Database
 *.db
