@@ -58,7 +58,6 @@ async def get_all_matches(
 async def get_live_matches(
     request: Request,
     league_id: Optional[int] = Query(None, description="Filter by league ID"),
-    date: Optional[str] = Query(None, description="Date filter (YYYY-MM-DD) - uses mobile app's local date instead of server time"),
     db: AsyncSession = Depends(get_db),
 ):
     """Get currently live matches from external APIs (API-Football, TheSportsDB).
@@ -71,7 +70,6 @@ async def get_live_matches(
     - Short cache TTL (30 seconds default)
     - Automatic fallback to alternative APIs
     - Normalized response format
-    - Accepts date parameter from mobile app to avoid server timezone issues
     """
     from app.application.services.events_service import EventsService
     
@@ -79,7 +77,6 @@ async def get_live_matches(
         events_service = EventsService()
         matches = await events_service.get_live_events(
             league_id=league_id,
-            date=date,  # Use date from mobile app if provided
             use_cache=True,
             cache_ttl=30,
         )
@@ -212,10 +209,10 @@ async def get_upcoming_matches(
         # If explicit from/to provided, check if range is one day or less
         days_diff = (end_date - start_date).total_seconds() / 86400  # Convert to days
         if days_diff <= 1:
-            # For single-day ranges, extract the date from start_date to pass to API
-            # This ensures TheSportsDB gets the correct date for fetching matches
-            api_date_filter = start_date.strftime("%Y-%m-%d")
-            logger.info(f"Single-day range detected, using date filter: {api_date_filter} (range: {start_date.isoformat()} to {end_date.isoformat()})")
+            # For single-day ranges, don't use date filter - get all events and filter by timestamp range
+            # This ensures we get matches for the correct day regardless of timezone
+            api_date_filter = None
+            logger.info(f"Single-day range detected, fetching events and filtering by timestamp range: {start_date.isoformat()} to {end_date.isoformat()}")
         else:
             # For multi-day ranges, don't pass date filter - get all and filter
             api_date_filter = None

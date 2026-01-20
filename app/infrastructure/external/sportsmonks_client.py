@@ -87,9 +87,9 @@ class SportsMonksClient(APIClient):
             # Default includes based on example
             params["include"] = "participants;scores;periods;events;league.country;round"
         
-        # Add league filter if provided (SportsMonks uses filters=fixtureLeagues:ID format)
+        # Add league filter if provided
         if league_id:
-            params["filters"] = f"fixtureLeagues:{league_id}"
+            params["filters"] = f"league_id:{league_id}"
 
         try:
             response = await self.get("/football/livescores/inplay", params=params)
@@ -116,9 +116,9 @@ class SportsMonksClient(APIClient):
         """Get fixtures (matches) from SportsMonks.
 
         Args:
-            date: Date filter (YYYY-MM-DD format) - if provided, uses /fixtures/date/{date} endpoint
-            league_id: Filter by league ID (will filter results in Python after API call)
-            team_id: Filter by team ID (will filter results in Python after API call)
+            date: Date filter (YYYY-MM-DD format)
+            league_id: Filter by league ID
+            team_id: Filter by team ID
             include: Comma-separated list of relations to include
 
         Returns:
@@ -126,54 +126,43 @@ class SportsMonksClient(APIClient):
         """
         params = {}
         
+        # Add date filter
+        if date:
+            params["filters"] = f"fixtures:{date}"
+        
+        # Add league filter
+        if league_id:
+            if "filters" in params:
+                params["filters"] += f",league_id:{league_id}"
+            else:
+                params["filters"] = f"league_id:{league_id}"
+        
+        # Add team filter
+        if team_id:
+            if "filters" in params:
+                params["filters"] += f",team_id:{team_id}"
+            else:
+                params["filters"] = f"team_id:{team_id}"
+        
         # Add include parameter
         if include:
             params["include"] = include
         else:
             params["include"] = "participants;scores;periods;events;league.country;round"
-        
-        # Use date-specific endpoint if date is provided
-        if date:
-            # Use /fixtures/date/{date} endpoint for specific date
-            endpoint = f"/football/fixtures/date/{date}"
-            response = await self.get(endpoint, params=params)
-        else:
-            # No date filter, use regular fixtures endpoint
+
+        try:
             response = await self.get("/football/fixtures", params=params)
-        
-        # Parse response
-        matches = []
-        if isinstance(response, dict):
-            matches = response.get("data", [])
-        elif isinstance(response, list):
-            matches = response
-        
-        # Filter by league_id in Python if provided
-        if league_id and matches:
-            filtered_matches = []
-            for match in matches:
-                match_league = match.get("league", {})
-                if isinstance(match_league, dict):
-                    match_league_id = match_league.get("id")
-                    if match_league_id == league_id:
-                        filtered_matches.append(match)
-                elif match.get("league_id") == league_id:
-                    filtered_matches.append(match)
-            matches = filtered_matches
-        
-        # Filter by team_id in Python if provided
-        if team_id and matches:
-            filtered_matches = []
-            for match in matches:
-                participants = match.get("participants", [])
-                if isinstance(participants, list):
-                    for participant in participants:
-                        if participant.get("id") == team_id:
-                            filtered_matches.append(match)
-                            break
-            matches = filtered_matches
-        
-        return matches
+            
+            if isinstance(response, dict):
+                return response.get("data", [])
+            elif isinstance(response, list):
+                return response
+            else:
+                logger.warning(f"Unexpected response format: {type(response)}")
+                return []
+        except APIError as e:
+            logger.error(f"SportsMonks API error: {e}")
+            raise
 
     async def get_match_by_id(
         self,
