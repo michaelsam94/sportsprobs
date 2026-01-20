@@ -297,24 +297,52 @@ class EventsService:
                 elif status in ["Full Time", "Match Finished"]:
                     status = "FT"
 
-                # Build score
+                # Build score - convert to int if provided (TheSportsDB may return as string or null)
                 home_score = event_data.get("intHomeScore")
                 away_score = event_data.get("intAwayScore")
+                
+                # Convert scores to int if they're strings
+                if home_score is not None:
+                    try:
+                        home_score = int(home_score)
+                    except (ValueError, TypeError):
+                        home_score = None
+                
+                if away_score is not None:
+                    try:
+                        away_score = int(away_score)
+                    except (ValueError, TypeError):
+                        away_score = None
 
                 # Extract team names
                 home_team_name = event_data.get("strHomeTeam")
                 away_team_name = event_data.get("strAwayTeam")
 
                 # Ensure team IDs are valid (> 0)
-                home_team_id = event_data.get("idHomeTeam") or 1
-                away_team_id = event_data.get("idAwayTeam") or 1
+                # TheSportsDB returns team IDs as strings, so convert to int
+                try:
+                    home_team_id = int(event_data.get("idHomeTeam") or 1)
+                except (ValueError, TypeError):
+                    home_team_id = 1
+                
+                try:
+                    away_team_id = int(event_data.get("idAwayTeam") or 1)
+                except (ValueError, TypeError):
+                    away_team_id = 1
+                
                 if home_team_id <= 0:
                     home_team_id = 1
                 if away_team_id <= 0:
                     away_team_id = 1
                 
+                # Convert event ID to int (TheSportsDB returns it as string)
+                try:
+                    event_id = int(event_data.get("idEvent", 0))
+                except (ValueError, TypeError):
+                    event_id = 0
+                
                 event = MatchResponseDTO(
-                    id=event_data.get("idEvent", 0),
+                    id=event_id,
                     home_team_id=home_team_id,
                     away_team_id=away_team_id,
                     home_team_name=home_team_name,
