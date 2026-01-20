@@ -174,28 +174,66 @@ class EventsService:
                 status = fixture_data.get("status", {}).get("short", "NS")
                 minute = fixture_data.get("status", {}).get("elapsed")
 
-                # Build score - API-Football uses fulltime for current score even during live matches
+                # Build score - API-Football score structure varies for live vs finished matches
                 home_score = None
                 away_score = None
                 
-                # Priority order: fulltime (current/live score) > extratime > halftime
-                # For live matches, fulltime contains the current score
-                if score_data.get("fulltime"):
-                    fulltime_score = score_data.get("fulltime", {})
-                    home_score = fulltime_score.get("home")
-                    away_score = fulltime_score.get("away")
+                # For live matches, check multiple possible score locations
+                if status in ["1H", "2H", "HT", "ET", "P", "BT", "INT", "LIVE"]:
+                    # Check teams.goals for live matches (some API versions use this)
+                    if teams_data.get("home", {}).get("goals") is not None:
+                        home_score = teams_data.get("home", {}).get("goals")
+                    if teams_data.get("away", {}).get("goals") is not None:
+                        away_score = teams_data.get("away", {}).get("goals")
+                    
+                    # Also check score.goals field (alternative structure)
+                    if (home_score is None or away_score is None) and score_data.get("goals"):
+                        goals_score = score_data.get("goals", {})
+                        if home_score is None:
+                            home_score = goals_score.get("home")
+                        if away_score is None:
+                            away_score = goals_score.get("away")
+                    
+                    # Check fixture.goals (some API versions)
+                    if (home_score is None or away_score is None) and fixture_data.get("goals"):
+                        fixture_goals = fixture_data.get("goals", {})
+                        if home_score is None:
+                            home_score = fixture_goals.get("home")
+                        if away_score is None:
+                            away_score = fixture_goals.get("away")
                 
-                # If fulltime not available, check extratime (for matches in extra time)
-                if (home_score is None and away_score is None) and score_data.get("extratime"):
+                # Check fulltime score (works for both live and finished matches)
+                # For live matches, fulltime may contain current score
+                if (home_score is None or away_score is None) and score_data.get("fulltime"):
+                    fulltime_score = score_data.get("fulltime", {})
+                    if home_score is None:
+                        home_score = fulltime_score.get("home")
+                    if away_score is None:
+                        away_score = fulltime_score.get("away")
+                
+                # Check extratime (for matches in extra time)
+                if (home_score is None or away_score is None) and score_data.get("extratime"):
                     extratime_score = score_data.get("extratime", {})
-                    home_score = extratime_score.get("home")
-                    away_score = extratime_score.get("away")
+                    if home_score is None:
+                        home_score = extratime_score.get("home")
+                    if away_score is None:
+                        away_score = extratime_score.get("away")
                 
                 # Fallback to halftime if available
-                if (home_score is None and away_score is None) and score_data.get("halftime"):
+                if (home_score is None or away_score is None) and score_data.get("halftime"):
                     halftime_score = score_data.get("halftime", {})
-                    home_score = halftime_score.get("home")
-                    away_score = halftime_score.get("away")
+                    if home_score is None:
+                        home_score = halftime_score.get("home")
+                    if away_score is None:
+                        away_score = halftime_score.get("away")
+                
+                # Debug logging for live matches without scores
+                if status in ["1H", "2H", "HT", "ET", "P", "BT", "INT", "LIVE"] and (home_score is None or away_score is None):
+                    logger.debug(
+                        f"Live match {fixture_data.get('id')} ({status}) - Score extraction: "
+                        f"score_data={score_data}, teams_data={teams_data}, "
+                        f"fixture_data_keys={list(fixture_data.keys())}"
+                    )
 
                 # Build teams
                 home_team = teams_data.get("home", {})
