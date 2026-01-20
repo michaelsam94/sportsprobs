@@ -320,13 +320,21 @@ class EventsService:
 
                 # Ensure team IDs are valid (> 0)
                 # TheSportsDB returns team IDs as strings, so convert to int
+                home_team_id_raw = event_data.get("idHomeTeam")
                 try:
-                    home_team_id = int(event_data.get("idHomeTeam") or 1)
+                    if home_team_id_raw is None or home_team_id_raw == "":
+                        home_team_id = 1
+                    else:
+                        home_team_id = int(home_team_id_raw)
                 except (ValueError, TypeError):
                     home_team_id = 1
                 
+                away_team_id_raw = event_data.get("idAwayTeam")
                 try:
-                    away_team_id = int(event_data.get("idAwayTeam") or 1)
+                    if away_team_id_raw is None or away_team_id_raw == "":
+                        away_team_id = 1
+                    else:
+                        away_team_id = int(away_team_id_raw)
                 except (ValueError, TypeError):
                     away_team_id = 1
                 
@@ -336,8 +344,12 @@ class EventsService:
                     away_team_id = 1
                 
                 # Convert event ID to int (TheSportsDB returns it as string)
+                event_id_raw = event_data.get("idEvent")
                 try:
-                    event_id = int(event_data.get("idEvent", 0))
+                    if event_id_raw is None or event_id_raw == "":
+                        event_id = 0
+                    else:
+                        event_id = int(event_id_raw)
                 except (ValueError, TypeError):
                     event_id = 0
                 
